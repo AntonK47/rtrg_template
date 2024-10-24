@@ -1,0 +1,87 @@
+{
+	"version": 6,
+	"cmakeMinimumRequired": {
+		"major": 3,
+		"minor": 26,
+		"patch": 0
+	},
+	"configurePresets": [
+		{
+			"name": "vcpkg",
+			"toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+			"hidden": true
+		},
+		{
+			"name": "msvc",
+			"cacheVariables": {
+				"CMAKE_CXX_COMPILER": "cl.exe"
+			},
+			"hidden": true
+		},
+		{
+			"name": "x64",
+			"architecture": {
+				"value": "x64",
+				"strategy": "external"
+			},
+			"hidden": true
+		},
+		{
+			"name": "debug",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug"
+			},
+			"hidden": true
+		},
+		{
+			"name": "release",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release",
+				"CMAKE_INTERPROCEDURAL_OPTIMIZATION": true
+			},
+			"hidden": true
+		},
+		{
+			"name": "base-windows",
+			"description": "Target Windows with the Visual Studio development environment.",
+			"hidden": true,
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/out/build/${presetName}",
+			"installDir": "${sourceDir}/out/install/${presetName}",
+			"cacheVariables": {
+				"CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "x64-debug",
+			"displayName": "x64 Debug",
+			"description": "",
+			"inherits": [ "base-windows", "x64", "msvc", "debug", "vcpkg" ]
+		},
+		{
+			"name": "x64-release",
+			"description": "",
+			"displayName": "x64 Release",
+			"inherits": [ "base-windows", "x64", "msvc", "release", "vcpkg" ]
+		}
+	],
+	"buildPresets": [
+		{
+			"name": "Debug",
+			"displayName": "Debug",
+			"description": "Debug configuration.",
+			"configurePreset": "x64-debug"
+		},
+		{
+			"name": "Release",
+			"displayName": "Release",
+			"description": "Release configuration.",
+			"configurePreset": "x64-release"
+		}
+	]
+}
