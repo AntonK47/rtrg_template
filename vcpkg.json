@@ -4,7 +4,10 @@
     "nlohmann-json",
     "glslang",
     "imgui",
-    "gtest"
+    "gtest",
+    "volk",
+    "vulkan-headers",
+    "vulkan-memory-allocator"
   ],
   "builtin-baseline": "d567b667adba0e72c5c3931ddbe745b66aa34b73"
 }

@@ -1,4 +1,6 @@
 find_package(glslang CONFIG REQUIRED)
+find_package(volk CONFIG REQUIRED)
+find_package(VulkanHeaders CONFIG)
 
 set(FRAMEWORK_NAME TemplateFramework)
 
@@ -8,8 +10,11 @@ target_compile_features(${FRAMEWORK_NAME} PUBLIC cxx_std_23)
 target_sources(
     ${FRAMEWORK_NAME}
 PRIVATE 
-	utils.cpp
-    utils.hpp)
+	Utils.cpp
+    Utils.hpp
+	Application.hpp
+	Application.cpp
+)
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)
 
@@ -18,5 +23,8 @@ target_link_libraries(
 PRIVATE 
 	glslang::glslang
 	glslang::glslang-default-resource-limits
+	volk::volk_headers
+	Vulkan::Headers
+	SDL3::SDL3-static
 )
 

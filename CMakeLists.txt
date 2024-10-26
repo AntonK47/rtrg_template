@@ -3,8 +3,6 @@ cmake_minimum_required(VERSION 3.29)
 project(rtrg VERSION 0.1 LANGUAGES CXX)
 
 
-
-
 add_subdirectory(Framework)
 add_subdirectory(Application)
 add_subdirectory(ThirdParty EXCLUDE_FROM_ALL TRUE)

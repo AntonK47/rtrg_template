@@ -14,9 +14,3 @@ PRIVATE
 if(WIN32)
 	target_link_options(${APPLICATION_NAME}  PRIVATE "/SUBSYSTEM:WINDOWS" "/ENTRY:mainCRTStartup")
 endif()
-
-if(MSVC)
-  target_compile_options(${APPLICATION_NAME} PRIVATE /W4 /WX)
-else()
-  target_compile_options(${APPLICATION_NAME} PRIVATE -Wall -Wextra -Wpedantic -Werror)
-endif()
