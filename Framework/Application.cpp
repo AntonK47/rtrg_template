@@ -1,5 +1,7 @@
 #include "Application.hpp"
 
+#include "Utils.hpp"
+
 #include <array>
 #include <cassert>
 #include <vector>
@@ -39,6 +41,12 @@ struct VulkanContext
 	std::vector<VkImageView> swapchainImageViews;
 	std::vector<PerFrameResource> perFrameResouces;
 	std::vector<VkImage> swapchainImages;
+};
+
+struct FullscreenQuadPassResources
+{
+	VkPipeline pipeline;
+	VkPipelineLayout pipelineLayout;
 };
 
 void Framework::Application::run()
@@ -379,8 +387,9 @@ void Framework::Application::run()
 		vulkanContext.perFrameResouces.resize(frameResourceCount);
 		for (auto i = 0; i < frameResourceCount; i++)
 		{
-			const auto fenceCreateInfo =
-				VkFenceCreateInfo{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .pNext = nullptr, .flags = 0 };
+			const auto fenceCreateInfo = VkFenceCreateInfo{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+															.pNext = nullptr,
+															.flags = VK_FENCE_CREATE_SIGNALED_BIT };
 
 			const auto result = vkCreateFence(vulkanContext.device, &fenceCreateInfo, nullptr,
 											  &vulkanContext.perFrameResouces[i].frameFinished);
@@ -396,20 +405,29 @@ void Framework::Application::run()
 			assert(result == VK_SUCCESS);
 		}
 
+		for (auto i = 0; i < frameResourceCount; i++)
+		{
+			const auto semaphoreCreateInfo =
+				VkSemaphoreCreateInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr, .flags = 0 };
+			const auto result = vkCreateSemaphore(vulkanContext.device, &semaphoreCreateInfo, nullptr,
+												  &vulkanContext.perFrameResouces[i].readyToRender);
+			assert(result == VK_SUCCESS);
+		}
+
 		vulkanContext.swapchainImageViews.resize(frameResourceCount);
 		for (auto i = 0; i < frameResourceCount; i++)
 		{
-			const auto imageViewCreateInfo = VkImageViewCreateInfo{
-				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				.pNext = nullptr,
-				.flags = 0,
-				.image = vulkanContext.swapchainImages[i],
-				.viewType = VK_IMAGE_VIEW_TYPE_2D,
-				.format = vulkanContext.swapchainImageFormat,
-				.components = VkComponentMapping{ VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-												  VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
-				.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
-			};
+			const auto imageViewCreateInfo =
+				VkImageViewCreateInfo{ .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+									   .pNext = nullptr,
+									   .flags = 0,
+									   .image = vulkanContext.swapchainImages[i],
+									   .viewType = VK_IMAGE_VIEW_TYPE_2D,
+									   .format = vulkanContext.swapchainImageFormat,
+									   .components =
+										   VkComponentMapping{ VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+															   VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
+									   .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
 			const auto result = vkCreateImageView(vulkanContext.device, &imageViewCreateInfo, nullptr,
 												  &vulkanContext.swapchainImageViews[i]);
 			assert(result == VK_SUCCESS);
@@ -465,6 +483,248 @@ void Framework::Application::run()
 	}
 #pragma endregion
 
+
+#pragma region Geometry Pass initialization
+	FullscreenQuadPassResources fullscreenQuadPassResources;
+
+	{
+		const auto pipelineLayoutCreateInfo =
+			VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+										.pNext = nullptr,
+										.flags = 0,
+										.setLayoutCount = 0,
+										.pSetLayouts = nullptr,
+										.pushConstantRangeCount = 0,
+										.pPushConstantRanges = nullptr };
+		const auto result = vkCreatePipelineLayout(vulkanContext.device, &pipelineLayoutCreateInfo, nullptr,
+												   &fullscreenQuadPassResources.pipelineLayout);
+		assert(result == VK_SUCCESS);
+	}
+
+	{
+		VkShaderModule vertexShaderModule;
+		{
+			const auto shader =
+				R"(#version 460
+
+const vec3 triangle[] =
+{
+	vec3(1.0,3.0,0.0),
+	vec3(1.0,-1.0,0.0),
+	vec3(-3.0,-1.0,0.0)
+};
+
+const vec2 uvs[] =
+{
+	vec2(1.0,-1.0),
+	vec2(1.0,1.0),
+	vec2(-1.0,1.0)
+};
+
+layout(location = 0 ) out vec2 uv;
+
+void main()
+{
+	uv = uvs[gl_VertexIndex].xy;
+	gl_Position = vec4(triangle[gl_VertexIndex], 1.0);
+})";
+
+			const auto shaderInfo =
+				Utils::ShaderInfo{ "main", {}, Utils::ShaderStage::Vertex, Utils::GlslShaderCode{ shader } };
+
+			Utils::ShaderByteCode code;
+			const auto compilationResult = Utils::CompileToSpirv(shaderInfo, code);
+			assert(compilationResult == Utils::CompilationResult::Success);
+
+			const auto vertexShaderCreateInfo =
+				VkShaderModuleCreateInfo{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+										  .pNext = nullptr,
+										  .flags = 0,
+										  .codeSize = code.size() * 4,
+										  .pCode = code.data() };
+
+			const auto result =
+				vkCreateShaderModule(vulkanContext.device, &vertexShaderCreateInfo, nullptr, &vertexShaderModule);
+			assert(result == VK_SUCCESS);
+		}
+
+		VkShaderModule fragmentShaderModule;
+		{
+			const auto shader =
+				R"(#version 460
+
+layout(location = 0) out vec4 outputColor;
+layout(location = 0) in vec2 uv;
+
+const vec2 iResolution = vec2(1280.0f, 720.0f);
+const vec2 iMouse = vec2(0.0f, 0.0f);
+const float iTime = 0.0f;
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
+{
+    fragColor = vec4(fragCoord/iResolution, 0.0f, 1.0f);
+}
+
+
+void main()
+{
+	mainImage(outputColor, /*gl_FragCoord.xy*/ uv * iResolution);
+})";
+
+			const auto shaderInfo =
+				Utils::ShaderInfo{ "main", {}, Utils::ShaderStage::Fragment, Utils::GlslShaderCode{ shader } };
+
+			Utils::ShaderByteCode code;
+			const auto compilationResult = Utils::CompileToSpirv(shaderInfo, code);
+			assert(compilationResult == Utils::CompilationResult::Success);
+
+			const auto fragmentShaderCreateInfo =
+				VkShaderModuleCreateInfo{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+										  .pNext = nullptr,
+										  .flags = 0,
+										  .codeSize = code.size() * 4,
+										  .pCode = code.data() };
+
+			const auto result =
+				vkCreateShaderModule(vulkanContext.device, &fragmentShaderCreateInfo, nullptr, &fragmentShaderModule);
+			assert(result == VK_SUCCESS);
+		}
+
+
+		const auto shaderStages =
+			std::array{ VkPipelineShaderStageCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+														 .pNext = nullptr,
+														 .flags = 0,
+														 .stage = VK_SHADER_STAGE_VERTEX_BIT,
+														 .module = vertexShaderModule,
+														 .pName = "main",
+														 .pSpecializationInfo = nullptr },
+						VkPipelineShaderStageCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+														 .pNext = nullptr,
+														 .flags = 0,
+														 .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+														 .module = fragmentShaderModule,
+														 .pName = "main",
+														 .pSpecializationInfo = nullptr } };
+
+
+		const auto pipelineRendering =
+			VkPipelineRenderingCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+										   .pNext = nullptr,
+										   .viewMask = 0,
+										   .colorAttachmentCount = 1,
+										   .pColorAttachmentFormats = &vulkanContext.swapchainImageFormat,
+										   .depthAttachmentFormat = VK_FORMAT_UNDEFINED,
+										   .stencilAttachmentFormat = VK_FORMAT_UNDEFINED };
+
+
+		const auto vertexInputState =
+			VkPipelineVertexInputStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+												  .pNext = nullptr,
+												  .flags = 0,
+												  .vertexBindingDescriptionCount = 0,
+												  .pVertexBindingDescriptions = nullptr,
+												  .vertexAttributeDescriptionCount = 0,
+												  .pVertexAttributeDescriptions = nullptr };
+
+		const auto inputAssemblyState =
+			VkPipelineInputAssemblyStateCreateInfo{ .sType =
+														VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+													.pNext = nullptr,
+													.flags = 0,
+													.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+													.primitiveRestartEnable = VK_FALSE };
+
+		const auto viewportState =
+			VkPipelineViewportStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+											   .pNext = nullptr,
+											   .viewportCount = 1,
+											   .pViewports = nullptr, // we will use dynamic state
+											   .scissorCount = 1,
+											   .pScissors = nullptr }; // we will use dynamic state
+
+		const auto rasterizationState =
+			VkPipelineRasterizationStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+													.pNext = nullptr,
+													.flags = 0,
+													.depthClampEnable = VK_FALSE,
+													.rasterizerDiscardEnable = VK_FALSE,
+													.polygonMode = VK_POLYGON_MODE_FILL,
+													.cullMode = VK_CULL_MODE_BACK_BIT,
+													.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+													.depthBiasEnable = VK_FALSE,
+													.lineWidth = 1.0f };
+
+		const auto multisampleState =
+			VkPipelineMultisampleStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+												  .pNext = nullptr,
+												  .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+												  .sampleShadingEnable = VK_FALSE,
+												  .alphaToCoverageEnable = VK_FALSE };
+
+		const auto depthStencilState =
+			VkPipelineDepthStencilStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+												   .pNext = nullptr,
+												   .flags = 0,
+												   .depthTestEnable = VK_FALSE,
+												   .depthWriteEnable = VK_FALSE,
+												   .depthBoundsTestEnable = VK_FALSE,
+												   .stencilTestEnable = VK_FALSE };
+
+		const auto blendAttachment =
+			VkPipelineColorBlendAttachmentState{ .blendEnable = VK_TRUE,
+												 .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+												 .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+												 .colorBlendOp = VK_BLEND_OP_ADD,
+												 .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+												 .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+												 .alphaBlendOp = VK_BLEND_OP_ADD,
+												 .colorWriteMask = VK_COLOR_COMPONENT_A_BIT | VK_COLOR_COMPONENT_B_BIT |
+													 VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT };
+
+		const auto blendState =
+			VkPipelineColorBlendStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+												 .pNext = nullptr,
+												 .flags = 0,
+												 //.logicOpEnable = VK_FALSE,
+												 .attachmentCount = 1,
+												 .pAttachments = &blendAttachment };
+
+		const auto dynamicStates = std::array{ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+		const auto dynamicState =
+			VkPipelineDynamicStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+											  .pNext = nullptr,
+											  .flags = 0,
+											  .dynamicStateCount = dynamicStates.size(),
+											  .pDynamicStates = dynamicStates.data() };
+
+		const auto pipelineCreateInfo =
+			VkGraphicsPipelineCreateInfo{ .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+										  .pNext = &pipelineRendering,
+										  .flags = 0,
+										  .stageCount = shaderStages.size(),
+										  .pStages = shaderStages.data(),
+										  .pVertexInputState = &vertexInputState,
+										  .pInputAssemblyState = &inputAssemblyState,
+										  .pTessellationState = nullptr,
+										  .pViewportState = &viewportState,
+										  .pRasterizationState = &rasterizationState,
+										  .pMultisampleState = &multisampleState,
+										  .pDepthStencilState = &depthStencilState,
+										  .pColorBlendState = &blendState,
+										  .pDynamicState = &dynamicState,
+										  .layout = fullscreenQuadPassResources.pipelineLayout,
+										  .renderPass = VK_NULL_HANDLE,
+										  .subpass = 0 };
+
+		const auto result = vkCreateGraphicsPipelines(vulkanContext.device, VK_NULL_HANDLE, 1, &pipelineCreateInfo,
+													  nullptr, &fullscreenQuadPassResources.pipeline);
+		assert(result == VK_SUCCESS);
+	}
+
+#pragma endregion
+
+
 	bool shouldRun = true;
 
 	auto frameIndex = uint32_t{ 0 };
@@ -491,8 +751,9 @@ void Framework::Application::run()
 										   .pNext = nullptr,
 										   .swapchain = vulkanContext.swapchain,
 										   .timeout = ~0ull,
-										   .semaphore = VK_NULL_HANDLE,
-										   .fence = vulkanContext.perFrameResouces[perFrameResourceIndex].frameFinished,
+										   .semaphore =
+											   vulkanContext.perFrameResouces[perFrameResourceIndex].readyToRender,
+										   .fence = VK_NULL_HANDLE,
 										   .deviceMask = 1 };
 
 			const auto result = vkAcquireNextImage2KHR(vulkanContext.device, &acquireNextImageInfo, &imageIndex);
@@ -504,6 +765,11 @@ void Framework::Application::run()
 			const auto result =
 				vkWaitForFences(vulkanContext.device, 1,
 								&vulkanContext.perFrameResouces[perFrameResourceIndex].frameFinished, VK_TRUE, ~0ull);
+			assert(result == VK_SUCCESS);
+		}
+		{
+			const auto result = vkResetFences(vulkanContext.device, 1,
+											  &vulkanContext.perFrameResouces[perFrameResourceIndex].frameFinished);
 			assert(result == VK_SUCCESS);
 		}
 		{
@@ -559,38 +825,38 @@ void Framework::Application::run()
 		}
 #pragma endregion
 
-		{
-			const auto colorAttachment =
-				VkRenderingAttachmentInfo{ .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-										   .pNext = nullptr,
-										   .imageView = vulkanContext.swapchainImageViews[imageIndex],
-										   .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-										   .resolveMode = VK_RESOLVE_MODE_NONE,
-										   .resolveImageView = VK_NULL_HANDLE,
-										   .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-										   .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-										   .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-										   .clearValue = VkClearColorValue{ { 100, 0, 0, 255 } } };
+		const auto colorAttachment =
+			VkRenderingAttachmentInfo{ .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+									   .pNext = nullptr,
+									   .imageView = vulkanContext.swapchainImageViews[imageIndex],
+									   .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+									   .resolveMode = VK_RESOLVE_MODE_NONE,
+									   .resolveImageView = VK_NULL_HANDLE,
+									   .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+									   .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+									   .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+									   .clearValue = VkClearColorValue{ { 100, 0, 0, 255 } } };
 
-			const auto renderingInfo = VkRenderingInfo{ .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-														.pNext = nullptr,
-														.flags = 0,
-														.renderArea = VkRect2D{ .offset = VkOffset2D{ 100, 400 },
-																				.extent = VkExtent2D{ 200, 300 } },
-														.layerCount = 1,
-														.viewMask = 0,
-														.colorAttachmentCount = 1,
-														.pColorAttachments = &colorAttachment,
-														.pDepthAttachment = nullptr,
-														.pStencilAttachment = nullptr };
-			vkCmdBeginRendering(cmd, &renderingInfo);
-		}
+		const auto renderingInfo = VkRenderingInfo{ .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+													.pNext = nullptr,
+													.flags = 0,
+													.renderArea = VkRect2D{ { 0, 0 }, { 1280, 720 } },
+													.layerCount = 1,
+													.viewMask = 0,
+													.colorAttachmentCount = 1,
+													.pColorAttachments = &colorAttachment,
+													.pDepthAttachment = nullptr,
+													.pStencilAttachment = nullptr };
+		vkCmdBeginRendering(cmd, &renderingInfo);
 
-
-		// DO RENDERING HERE
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fullscreenQuadPassResources.pipeline);
+		const auto viewport = VkViewport{ 0.0f, 0.0f, 1280.0f, 720.0f, 0.0f, 1.0f };
+		vkCmdSetViewport(cmd, 0, 1, &viewport);
+		const auto scissor = VkRect2D{ { 0, 0 }, { 1280, 720 } };
+		vkCmdSetScissor(cmd, 0, 1, &scissor);
+		vkCmdDraw(cmd, 3, 1, 0, 0);
 
 		vkCmdEndRendering(cmd);
-
 
 #pragma region Resource transition [color attachment -> presentable image]
 		{
@@ -633,7 +899,12 @@ void Framework::Application::run()
 				.pNext = nullptr,
 				.commandBuffer = vulkanContext.perFrameResouces[perFrameResourceIndex].commandBuffer,
 				.deviceMask = 1 } };
-			const auto waitSemaphoreInfos = std::array<VkSemaphoreSubmitInfo, 0>{};
+			const auto waitSemaphoreInfos = std::array{ VkSemaphoreSubmitInfo{
+				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+				.pNext = nullptr,
+				.semaphore = vulkanContext.perFrameResouces[perFrameResourceIndex].readyToRender,
+				.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+				.deviceIndex = 1 } };
 			const auto signalSemaphoreInfos = std::array{ VkSemaphoreSubmitInfo{
 				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 				.pNext = nullptr,
@@ -644,14 +915,14 @@ void Framework::Application::run()
 				.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
 				.pNext = nullptr,
 				.flags = 0,
-				.waitSemaphoreInfoCount = 0, // static_cast<uint32_t>(waitSemaphoreInfos.size()),
-				.pWaitSemaphoreInfos = nullptr, // waitSemaphoreInfos.data(),
+				.waitSemaphoreInfoCount = static_cast<uint32_t>(waitSemaphoreInfos.size()),
+				.pWaitSemaphoreInfos = waitSemaphoreInfos.data(),
 				.commandBufferInfoCount = static_cast<uint32_t>(bufferSubmitInfos.size()),
 				.pCommandBufferInfos = bufferSubmitInfos.data(),
 				.signalSemaphoreInfoCount = static_cast<uint32_t>(signalSemaphoreInfos.size()),
 				.pSignalSemaphoreInfos = signalSemaphoreInfos.data(),
 			};
-			const auto result = vkQueueSubmit2(vulkanContext.graphicsQueue, 1, &submit, VK_NULL_HANDLE);
+			const auto result = vkQueueSubmit2(vulkanContext.graphicsQueue, 1, &submit, vulkanContext.perFrameResouces[perFrameResourceIndex].frameFinished);
 			assert(result == VK_SUCCESS);
 		}
 #pragma endregion
@@ -672,6 +943,7 @@ void Framework::Application::run()
 			const auto result = vkQueuePresentKHR(vulkanContext.graphicsQueue, &presentInfo);
 			assert(result == VK_SUCCESS);
 		}
+		frameIndex++;
 	}
 
 	SDL_DestroyWindow(window);
