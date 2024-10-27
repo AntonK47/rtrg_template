@@ -36,13 +36,14 @@ struct VulkanContext
 
 	VkSurfaceKHR surface;
 	VkSwapchainKHR swapchain;
-	uint32_t swapchainImageCount;
+	uint32_t swapchainImageCount{};
 	VkFormat swapchainImageFormat;
 	VkColorSpaceKHR swapchainImageColorSpace;
-	std::vector<VkImageView> swapchainImageViews;
-	std::vector<VkImage> swapchainImages;
+	std::vector<VkImageView> swapchainImageViews{};
+	std::vector<VkImage> swapchainImages{};
 
-	std::vector<PerFrameResource> perFrameResources;
+	uint32_t frameResourceCount{};
+	std::vector<PerFrameResource> perFrameResources{};
 };
 
 struct FullscreenQuadPassResources
@@ -390,10 +391,11 @@ void Framework::Application::Run()
 			assert(result == VK_SUCCESS);
 		}
 
-		const auto frameResourceCount = vulkanContext.swapchainImageCount;
+		//assume 2, for now
+		vulkanContext.frameResourceCount = 2;
 
-		vulkanContext.perFrameResources.resize(frameResourceCount);
-		for (auto i = 0; i < frameResourceCount; i++)
+		vulkanContext.perFrameResources.resize(vulkanContext.frameResourceCount);
+		for (auto i = 0; i < vulkanContext.frameResourceCount; i++)
 		{
 			const auto fenceCreateInfo = VkFenceCreateInfo{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
 															.pNext = nullptr,
@@ -404,7 +406,7 @@ void Framework::Application::Run()
 			assert(result == VK_SUCCESS);
 		}
 
-		for (auto i = 0; i < frameResourceCount; i++)
+		for (auto i = 0; i < vulkanContext.frameResourceCount; i++)
 		{
 			const auto semaphoreCreateInfo =
 				VkSemaphoreCreateInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr, .flags = 0 };
@@ -413,7 +415,7 @@ void Framework::Application::Run()
 			assert(result == VK_SUCCESS);
 		}
 
-		for (auto i = 0; i < frameResourceCount; i++)
+		for (auto i = 0; i < vulkanContext.frameResourceCount; i++)
 		{
 			const auto semaphoreCreateInfo =
 				VkSemaphoreCreateInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr, .flags = 0 };
@@ -422,8 +424,8 @@ void Framework::Application::Run()
 			assert(result == VK_SUCCESS);
 		}
 
-		vulkanContext.swapchainImageViews.resize(frameResourceCount);
-		for (auto i = 0; i < frameResourceCount; i++)
+		vulkanContext.swapchainImageViews.resize(vulkanContext.swapchainImageCount);
+		for (auto i = 0; i < vulkanContext.swapchainImageCount; i++)
 		{
 			const auto imageViewCreateInfo = VkImageViewCreateInfo{
 				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -443,7 +445,7 @@ void Framework::Application::Run()
 
 #pragma region Command buffer creation
 
-		for (auto i = 0; i < frameResourceCount; i++)
+		for (auto i = 0; i < vulkanContext.frameResourceCount; i++)
 		{
 			const auto poolCreateInfo =
 				VkCommandPoolCreateInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -456,7 +458,7 @@ void Framework::Application::Run()
 		}
 
 		// create only one command buffer per pool, fon now, it might change in the future
-		for (auto i = 0; i < frameResourceCount; i++)
+		for (auto i = 0; i < vulkanContext.frameResourceCount; i++)
 		{
 			VkStructureType sType;
 			const void* pNext;
@@ -743,7 +745,7 @@ void main()
 		}
 #pragma endregion
 
-		const auto perFrameResourceIndex = frameIndex % vulkanContext.swapchainImageCount;
+		const auto perFrameResourceIndex = frameIndex % vulkanContext.frameResourceCount;
 
 #pragma region Wait for resource reuse
 		{
