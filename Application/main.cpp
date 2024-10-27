@@ -2,6 +2,6 @@
 
 int main([[maybe_unused]]int argc, [[maybe_unused]]char* argv[])
 {
-	Framework::Application::run();
+	Framework::Application::Run();
 	return 0;
 }

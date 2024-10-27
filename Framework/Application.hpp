@@ -5,6 +5,6 @@ namespace Framework
 
 	struct Application
 	{
-		static void run();
+		static void Run();
 	};
 }

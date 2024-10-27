@@ -45,11 +45,18 @@ struct VulkanContext
 
 struct FullscreenQuadPassResources
 {
+
 	VkPipeline pipeline;
 	VkPipelineLayout pipelineLayout;
+
+	void ReleaseResouces(VkDevice device)
+	{
+		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+		vkDestroyPipeline(device, pipeline, nullptr);
+	}
 };
 
-void Framework::Application::run()
+void Framework::Application::Run()
 {
 #pragma region SDL window initialization
 	if (!SDL_Init(SDL_INIT_VIDEO))
@@ -325,8 +332,7 @@ void Framework::Application::run()
 
 			assert(formats.size() > 0);
 			// check if rgba srgb available
-			const auto found = std::find_if(formats.begin(), formats.end(),
-											[](const VkSurfaceFormat2KHR& format)
+			const auto found = std::find_if(formats.begin(), formats.end(), [](const VkSurfaceFormat2KHR& format)
 											{ return format.surfaceFormat.format == VK_FORMAT_R8G8B8A8_SRGB; });
 			auto format = VkSurfaceFormat2KHR{};
 			if (found != formats.end())
@@ -417,17 +423,17 @@ void Framework::Application::run()
 		vulkanContext.swapchainImageViews.resize(frameResourceCount);
 		for (auto i = 0; i < frameResourceCount; i++)
 		{
-			const auto imageViewCreateInfo =
-				VkImageViewCreateInfo{ .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-									   .pNext = nullptr,
-									   .flags = 0,
-									   .image = vulkanContext.swapchainImages[i],
-									   .viewType = VK_IMAGE_VIEW_TYPE_2D,
-									   .format = vulkanContext.swapchainImageFormat,
-									   .components =
-										   VkComponentMapping{ VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-															   VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
-									   .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+			const auto imageViewCreateInfo = VkImageViewCreateInfo{
+				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+				.pNext = nullptr,
+				.flags = 0,
+				.image = vulkanContext.swapchainImages[i],
+				.viewType = VK_IMAGE_VIEW_TYPE_2D,
+				.format = vulkanContext.swapchainImageFormat,
+				.components = VkComponentMapping{ VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+												  VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
+				.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+			};
 			const auto result = vkCreateImageView(vulkanContext.device, &imageViewCreateInfo, nullptr,
 												  &vulkanContext.swapchainImageViews[i]);
 			assert(result == VK_SUCCESS);
@@ -720,7 +726,12 @@ void main()
 		const auto result = vkCreateGraphicsPipelines(vulkanContext.device, VK_NULL_HANDLE, 1, &pipelineCreateInfo,
 													  nullptr, &fullscreenQuadPassResources.pipeline);
 		assert(result == VK_SUCCESS);
+
+
+		vkDestroyShaderModule(vulkanContext.device, vertexShaderModule, nullptr);
+		vkDestroyShaderModule(vulkanContext.device, fragmentShaderModule, nullptr);
 	}
+
 
 #pragma endregion
 
@@ -742,23 +753,7 @@ void main()
 		}
 
 		const auto perFrameResourceIndex = frameIndex % vulkanContext.swapchainImageCount;
-		auto imageIndex = uint32_t{ 0 };
 
-		{
-
-			const auto acquireNextImageInfo =
-				VkAcquireNextImageInfoKHR{ .sType = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR,
-										   .pNext = nullptr,
-										   .swapchain = vulkanContext.swapchain,
-										   .timeout = ~0ull,
-										   .semaphore =
-											   vulkanContext.perFrameResouces[perFrameResourceIndex].readyToRender,
-										   .fence = VK_NULL_HANDLE,
-										   .deviceMask = 1 };
-
-			const auto result = vkAcquireNextImage2KHR(vulkanContext.device, &acquireNextImageInfo, &imageIndex);
-			assert(result == VK_SUCCESS);
-		}
 
 		{
 
@@ -777,10 +772,23 @@ void main()
 				vulkanContext.device, vulkanContext.perFrameResouces[perFrameResourceIndex].commandPool, 0);
 			assert(result == VK_SUCCESS);
 		}
+
+
+		auto imageIndex = uint32_t{ 0 };
+
 		{
 
-			const auto result = vkResetFences(vulkanContext.device, 1,
-											  &vulkanContext.perFrameResouces[perFrameResourceIndex].frameFinished);
+			const auto acquireNextImageInfo =
+				VkAcquireNextImageInfoKHR{ .sType = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR,
+										   .pNext = nullptr,
+										   .swapchain = vulkanContext.swapchain,
+										   .timeout = ~0ull,
+										   .semaphore =
+											   vulkanContext.perFrameResouces[perFrameResourceIndex].readyToRender,
+										   .fence = VK_NULL_HANDLE,
+										   .deviceMask = 1 };
+
+			const auto result = vkAcquireNextImage2KHR(vulkanContext.device, &acquireNextImageInfo, &imageIndex);
 			assert(result == VK_SUCCESS);
 		}
 
@@ -922,7 +930,8 @@ void main()
 				.signalSemaphoreInfoCount = static_cast<uint32_t>(signalSemaphoreInfos.size()),
 				.pSignalSemaphoreInfos = signalSemaphoreInfos.data(),
 			};
-			const auto result = vkQueueSubmit2(vulkanContext.graphicsQueue, 1, &submit, vulkanContext.perFrameResouces[perFrameResourceIndex].frameFinished);
+			const auto result = vkQueueSubmit2(vulkanContext.graphicsQueue, 1, &submit,
+											   vulkanContext.perFrameResouces[perFrameResourceIndex].frameFinished);
 			assert(result == VK_SUCCESS);
 		}
 #pragma endregion
@@ -946,7 +955,41 @@ void main()
 		frameIndex++;
 	}
 
-	SDL_DestroyWindow(window);
+#pragma region Vulkan objects cleanup
 
+	// wait until all submitted work is finished
+	{
+		const auto result = vkQueueWaitIdle(vulkanContext.graphicsQueue);
+		assert(result == VK_SUCCESS);
+	}
+
+	{
+		for (auto i = 0; i < vulkanContext.swapchainImageCount; i++)
+		{
+			vkDestroyImageView(vulkanContext.device, vulkanContext.swapchainImageViews[i], nullptr);
+		}
+
+		vkDestroySwapchainKHR(vulkanContext.device, vulkanContext.swapchain, nullptr);
+
+		for (auto i = 0; i < vulkanContext.perFrameResouces.size(); i++)
+		{
+			const auto& perFrameResource = vulkanContext.perFrameResouces[i];
+			vkDestroyFence(vulkanContext.device, perFrameResource.frameFinished, nullptr);
+			vkDestroySemaphore(vulkanContext.device, perFrameResource.readyToPresent, nullptr);
+			vkDestroySemaphore(vulkanContext.device, perFrameResource.readyToRender, nullptr);
+
+			vkDestroyCommandPool(vulkanContext.device, perFrameResource.commandPool, nullptr);
+		}
+
+		SDL_Vulkan_DestroySurface(vulkanContext.instance, vulkanContext.surface, nullptr);
+
+		fullscreenQuadPassResources.ReleaseResouces(vulkanContext.device);
+
+		vkDestroyDevice(vulkanContext.device, nullptr);
+	}
+
+#pragma endregion
+
+	SDL_DestroyWindow(window);
 	SDL_Quit();
 }
