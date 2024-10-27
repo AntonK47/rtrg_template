@@ -14,3 +14,6 @@ PRIVATE
 if(WIN32)
 	target_link_options(${APPLICATION_NAME}  PRIVATE "/SUBSYSTEM:WINDOWS" "/ENTRY:mainCRTStartup")
 endif()
+
+
+add_dependencies(${APPLICATION_NAME} CopyAssets)
