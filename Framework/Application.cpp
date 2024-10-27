@@ -4,6 +4,8 @@
 
 #include <array>
 #include <cassert>
+#include <filesystem>
+#include <fstream>
 #include <vector>
 
 #define VOLK_IMPLEMENTATION
@@ -37,10 +39,10 @@ struct VulkanContext
 	uint32_t swapchainImageCount;
 	VkFormat swapchainImageFormat;
 	VkColorSpaceKHR swapchainImageColorSpace;
-
 	std::vector<VkImageView> swapchainImageViews;
-	std::vector<PerFrameResource> perFrameResouces;
 	std::vector<VkImage> swapchainImages;
+
+	std::vector<PerFrameResource> perFrameResources;
 };
 
 struct FullscreenQuadPassResources
@@ -69,6 +71,8 @@ void Framework::Application::Run()
 
 	SDL_Window* window =
 		SDL_CreateWindow(applicationName, 1280, 720, SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+	// could be replaced with win32 window, see minimul example here
+	// https://learn.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program?source=recommendations
 
 	if (!window)
 	{
@@ -96,8 +100,6 @@ void Framework::Application::Run()
 			instanceExtensions[i] = extensions[i];
 		}
 	}
-
-	// ADD FUTURE INSTANCE EXTENSIONS HERE
 
 	auto vulkanContext = VulkanContext{};
 
@@ -130,7 +132,7 @@ void Framework::Application::Run()
 	volkLoadInstance(vulkanContext.instance);
 #pragma endregion
 
-#pragma region Physical Device selection
+#pragma region Physical device selection
 	{
 		auto physicalDeviceCount = uint32_t{};
 		auto result = vkEnumeratePhysicalDevices(vulkanContext.instance, &physicalDeviceCount, nullptr);
@@ -390,7 +392,7 @@ void Framework::Application::Run()
 
 		const auto frameResourceCount = vulkanContext.swapchainImageCount;
 
-		vulkanContext.perFrameResouces.resize(frameResourceCount);
+		vulkanContext.perFrameResources.resize(frameResourceCount);
 		for (auto i = 0; i < frameResourceCount; i++)
 		{
 			const auto fenceCreateInfo = VkFenceCreateInfo{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -398,7 +400,7 @@ void Framework::Application::Run()
 															.flags = VK_FENCE_CREATE_SIGNALED_BIT };
 
 			const auto result = vkCreateFence(vulkanContext.device, &fenceCreateInfo, nullptr,
-											  &vulkanContext.perFrameResouces[i].frameFinished);
+											  &vulkanContext.perFrameResources[i].frameFinished);
 			assert(result == VK_SUCCESS);
 		}
 
@@ -407,7 +409,7 @@ void Framework::Application::Run()
 			const auto semaphoreCreateInfo =
 				VkSemaphoreCreateInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr, .flags = 0 };
 			const auto result = vkCreateSemaphore(vulkanContext.device, &semaphoreCreateInfo, nullptr,
-												  &vulkanContext.perFrameResouces[i].readyToPresent);
+												  &vulkanContext.perFrameResources[i].readyToPresent);
 			assert(result == VK_SUCCESS);
 		}
 
@@ -416,7 +418,7 @@ void Framework::Application::Run()
 			const auto semaphoreCreateInfo =
 				VkSemaphoreCreateInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr, .flags = 0 };
 			const auto result = vkCreateSemaphore(vulkanContext.device, &semaphoreCreateInfo, nullptr,
-												  &vulkanContext.perFrameResouces[i].readyToRender);
+												  &vulkanContext.perFrameResources[i].readyToRender);
 			assert(result == VK_SUCCESS);
 		}
 
@@ -449,7 +451,7 @@ void Framework::Application::Run()
 										 .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
 										 .queueFamilyIndex = vulkanContext.graphicsQueueFamilyIndex };
 			const auto result = vkCreateCommandPool(vulkanContext.device, &poolCreateInfo, nullptr,
-													&vulkanContext.perFrameResouces[i].commandPool);
+													&vulkanContext.perFrameResources[i].commandPool);
 			assert(result == VK_SUCCESS);
 		}
 
@@ -465,18 +467,17 @@ void Framework::Application::Run()
 			const auto allocateInfo =
 				VkCommandBufferAllocateInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 											 .pNext = nullptr,
-											 .commandPool = vulkanContext.perFrameResouces[i].commandPool,
+											 .commandPool = vulkanContext.perFrameResources[i].commandPool,
 											 .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 											 .commandBufferCount = 1 };
 			const auto result = vkAllocateCommandBuffers(vulkanContext.device, &allocateInfo,
-														 &vulkanContext.perFrameResouces[i].commandBuffer);
+														 &vulkanContext.perFrameResources[i].commandBuffer);
 			assert(result == VK_SUCCESS);
 		}
 
 #pragma endregion
 	}
 #pragma endregion
-
 
 #pragma region Request graphics queue
 	{
@@ -489,19 +490,21 @@ void Framework::Application::Run()
 	}
 #pragma endregion
 
-
 #pragma region Geometry Pass initialization
 	FullscreenQuadPassResources fullscreenQuadPassResources;
 
 	{
+		const auto pushConstantRange =
+			VkPushConstantRange{ .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(float) };
+
 		const auto pipelineLayoutCreateInfo =
 			VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 										.pNext = nullptr,
 										.flags = 0,
 										.setLayoutCount = 0,
 										.pSetLayouts = nullptr,
-										.pushConstantRangeCount = 0,
-										.pPushConstantRanges = nullptr };
+										.pushConstantRangeCount = 1,
+										.pPushConstantRanges = &pushConstantRange };
 		const auto result = vkCreatePipelineLayout(vulkanContext.device, &pipelineLayoutCreateInfo, nullptr,
 												   &fullscreenQuadPassResources.pipelineLayout);
 		assert(result == VK_SUCCESS);
@@ -556,26 +559,14 @@ void main()
 
 		VkShaderModule fragmentShaderModule;
 		{
-			const auto shader =
-				R"(#version 460
+			const auto fragmentShaderFile = std::filesystem::path("Assets/Shaders/ShaderToySample.frag");
+			assert(std::filesystem::exists(fragmentShaderFile));
+			auto stream = std::ifstream{ fragmentShaderFile, std::ios::ate };
 
-layout(location = 0) out vec4 outputColor;
-layout(location = 0) in vec2 uv;
-
-const vec2 iResolution = vec2(1280.0f, 720.0f);
-const vec2 iMouse = vec2(0.0f, 0.0f);
-const float iTime = 0.0f;
-
-void mainImage(out vec4 fragColor, in vec2 fragCoord)
-{
-    fragColor = vec4(fragCoord/iResolution, 0.0f, 1.0f);
-}
-
-
-void main()
-{
-	mainImage(outputColor, /*gl_FragCoord.xy*/ uv * iResolution);
-})";
+			auto size = stream.tellg();
+			auto shader = std::string(size, '\0'); // construct string to stream size
+			stream.seekg(0);
+			stream.read(&shader[0], size);
 
 			const auto shaderInfo =
 				Utils::ShaderInfo{ "main", {}, Utils::ShaderStage::Fragment, Utils::GlslShaderCode{ shader } };
@@ -735,13 +726,12 @@ void main()
 
 #pragma endregion
 
-
 	bool shouldRun = true;
-
 	auto frameIndex = uint32_t{ 0 };
 
 	while (shouldRun)
 	{
+#pragma region Handle window events
 		SDL_Event event;
 		while (SDL_PollEvent(&event))
 		{
@@ -751,29 +741,31 @@ void main()
 				break;
 			}
 		}
+#pragma endregion
 
 		const auto perFrameResourceIndex = frameIndex % vulkanContext.swapchainImageCount;
 
-
+#pragma region Wait for resource reuse
 		{
 
 			const auto result =
 				vkWaitForFences(vulkanContext.device, 1,
-								&vulkanContext.perFrameResouces[perFrameResourceIndex].frameFinished, VK_TRUE, ~0ull);
+								&vulkanContext.perFrameResources[perFrameResourceIndex].frameFinished, VK_TRUE, ~0ull);
 			assert(result == VK_SUCCESS);
 		}
 		{
 			const auto result = vkResetFences(vulkanContext.device, 1,
-											  &vulkanContext.perFrameResouces[perFrameResourceIndex].frameFinished);
+											  &vulkanContext.perFrameResources[perFrameResourceIndex].frameFinished);
 			assert(result == VK_SUCCESS);
 		}
 		{
 			const auto result = vkResetCommandPool(
-				vulkanContext.device, vulkanContext.perFrameResouces[perFrameResourceIndex].commandPool, 0);
+				vulkanContext.device, vulkanContext.perFrameResources[perFrameResourceIndex].commandPool, 0);
 			assert(result == VK_SUCCESS);
 		}
+#pragma endregion
 
-
+#pragma region Acquire Swapchain image
 		auto imageIndex = uint32_t{ 0 };
 
 		{
@@ -784,18 +776,17 @@ void main()
 										   .swapchain = vulkanContext.swapchain,
 										   .timeout = ~0ull,
 										   .semaphore =
-											   vulkanContext.perFrameResouces[perFrameResourceIndex].readyToRender,
+											   vulkanContext.perFrameResources[perFrameResourceIndex].readyToRender,
 										   .fence = VK_NULL_HANDLE,
 										   .deviceMask = 1 };
 
 			const auto result = vkAcquireNextImage2KHR(vulkanContext.device, &acquireNextImageInfo, &imageIndex);
 			assert(result == VK_SUCCESS);
 		}
-
-
-		auto& cmd = vulkanContext.perFrameResouces[perFrameResourceIndex].commandBuffer;
+#pragma endregion
 
 #pragma region Begin Command Buffer
+		auto& cmd = vulkanContext.perFrameResources[perFrameResourceIndex].commandBuffer;
 		{
 			const auto beginInfo = VkCommandBufferBeginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 															 .pNext = nullptr,
@@ -833,6 +824,7 @@ void main()
 		}
 #pragma endregion
 
+#pragma region Rendering
 		const auto colorAttachment =
 			VkRenderingAttachmentInfo{ .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
 									   .pNext = nullptr,
@@ -862,9 +854,14 @@ void main()
 		vkCmdSetViewport(cmd, 0, 1, &viewport);
 		const auto scissor = VkRect2D{ { 0, 0 }, { 1280, 720 } };
 		vkCmdSetScissor(cmd, 0, 1, &scissor);
+		static float time = 0.0f;
+		time += 0.01f;
+		vkCmdPushConstants(cmd, fullscreenQuadPassResources.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+						   sizeof(float), &time);
 		vkCmdDraw(cmd, 3, 1, 0, 0);
 
 		vkCmdEndRendering(cmd);
+#pragma endregion
 
 #pragma region Resource transition [color attachment -> presentable image]
 		{
@@ -905,18 +902,18 @@ void main()
 			const auto bufferSubmitInfos = std::array{ VkCommandBufferSubmitInfo{
 				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
 				.pNext = nullptr,
-				.commandBuffer = vulkanContext.perFrameResouces[perFrameResourceIndex].commandBuffer,
+				.commandBuffer = vulkanContext.perFrameResources[perFrameResourceIndex].commandBuffer,
 				.deviceMask = 1 } };
 			const auto waitSemaphoreInfos = std::array{ VkSemaphoreSubmitInfo{
 				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 				.pNext = nullptr,
-				.semaphore = vulkanContext.perFrameResouces[perFrameResourceIndex].readyToRender,
+				.semaphore = vulkanContext.perFrameResources[perFrameResourceIndex].readyToRender,
 				.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
 				.deviceIndex = 1 } };
 			const auto signalSemaphoreInfos = std::array{ VkSemaphoreSubmitInfo{
 				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 				.pNext = nullptr,
-				.semaphore = vulkanContext.perFrameResouces[perFrameResourceIndex].readyToPresent,
+				.semaphore = vulkanContext.perFrameResources[perFrameResourceIndex].readyToPresent,
 				.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
 				.deviceIndex = 1 } };
 			const auto submit = VkSubmitInfo2{
@@ -931,11 +928,12 @@ void main()
 				.pSignalSemaphoreInfos = signalSemaphoreInfos.data(),
 			};
 			const auto result = vkQueueSubmit2(vulkanContext.graphicsQueue, 1, &submit,
-											   vulkanContext.perFrameResouces[perFrameResourceIndex].frameFinished);
+											   vulkanContext.perFrameResources[perFrameResourceIndex].frameFinished);
 			assert(result == VK_SUCCESS);
 		}
 #pragma endregion
 
+#pragma region Present image
 		{
 
 			const auto presentInfo =
@@ -943,7 +941,7 @@ void main()
 								  .pNext = nullptr,
 								  .waitSemaphoreCount = 1,
 								  .pWaitSemaphores =
-									  &vulkanContext.perFrameResouces[perFrameResourceIndex].readyToPresent,
+									  &vulkanContext.perFrameResources[perFrameResourceIndex].readyToPresent,
 								  .swapchainCount = 1,
 								  .pSwapchains = &vulkanContext.swapchain,
 								  .pImageIndices = &imageIndex,
@@ -952,6 +950,8 @@ void main()
 			const auto result = vkQueuePresentKHR(vulkanContext.graphicsQueue, &presentInfo);
 			assert(result == VK_SUCCESS);
 		}
+#pragma endregion
+
 		frameIndex++;
 	}
 
@@ -971,9 +971,9 @@ void main()
 
 		vkDestroySwapchainKHR(vulkanContext.device, vulkanContext.swapchain, nullptr);
 
-		for (auto i = 0; i < vulkanContext.perFrameResouces.size(); i++)
+		for (auto i = 0; i < vulkanContext.perFrameResources.size(); i++)
 		{
-			const auto& perFrameResource = vulkanContext.perFrameResouces[i];
+			const auto& perFrameResource = vulkanContext.perFrameResources[i];
 			vkDestroyFence(vulkanContext.device, perFrameResource.frameFinished, nullptr);
 			vkDestroySemaphore(vulkanContext.device, perFrameResource.readyToPresent, nullptr);
 			vkDestroySemaphore(vulkanContext.device, perFrameResource.readyToRender, nullptr);
@@ -986,6 +986,7 @@ void main()
 		fullscreenQuadPassResources.ReleaseResouces(vulkanContext.device);
 
 		vkDestroyDevice(vulkanContext.device, nullptr);
+		vkDestroyInstance(vulkanContext.instance, nullptr);
 	}
 
 #pragma endregion
