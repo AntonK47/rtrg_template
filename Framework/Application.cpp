@@ -72,7 +72,7 @@ void Framework::Application::Run()
 
 	SDL_Window* window =
 		SDL_CreateWindow(applicationName, 1280, 720, SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
-	// could be replaced with win32 window, see minimul example here
+	// could be replaced with win32 window, see minimal example here
 	// https://learn.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program?source=recommendations
 
 	if (!window)
@@ -492,7 +492,7 @@ void Framework::Application::Run()
 	}
 #pragma endregion
 
-#pragma region Geometry Pass initialization
+#pragma region Geometry pass initialization
 	FullscreenQuadPassResources fullscreenQuadPassResources;
 
 	{
@@ -787,7 +787,7 @@ void main()
 		}
 #pragma endregion
 
-#pragma region Begin Command Buffer
+#pragma region Begin CommandBuffer
 		auto& cmd = vulkanContext.perFrameResources[perFrameResourceIndex].commandBuffer;
 		{
 			const auto beginInfo = VkCommandBufferBeginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -899,7 +899,7 @@ void main()
 		}
 #pragma endregion
 
-#pragma region Submit Command Buffer
+#pragma region Submit CommandBuffer
 		{
 			const auto bufferSubmitInfos = std::array{ VkCommandBufferSubmitInfo{
 				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
