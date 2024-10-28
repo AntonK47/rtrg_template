@@ -780,9 +780,9 @@ void main()
 											   .MinImageCount = vulkanContext.swapchainImageCount,
 											   .ImageCount = vulkanContext.swapchainImageCount,
 											   .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
-											   .Allocator = nullptr,
 											   .UseDynamicRendering = true,
-											   .PipelineRenderingCreateInfo = pipelineRendering };
+											   .PipelineRenderingCreateInfo = pipelineRendering,
+											   .Allocator = nullptr };
 
 
 	ImGui_ImplVulkan_Init(&initInfo);
