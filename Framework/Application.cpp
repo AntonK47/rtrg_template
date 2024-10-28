@@ -237,7 +237,7 @@ void Framework::Application::Run()
 		}
 
 
-		// SELECT HIGHT RATING DEVICE
+		// SELECT HEIGHT RATING DEVICE
 		{
 			const auto& bestCandidate = std::max_element(
 				physicalDevicesQuery.begin(), physicalDevicesQuery.end(),
@@ -789,7 +789,6 @@ void main()
 	ImGui_ImplSDL3_InitForVulkan(window);
 #pragma endregion
 
-
 	bool shouldRun = true;
 	auto frameIndex = uint32_t{ 0 };
 
@@ -808,18 +807,14 @@ void main()
 		}
 #pragma endregion
 
-
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplSDL3_NewFrame();
-		/*auto& io = ImGui::GetIO();
-		io.DisplaySize = ImVec2(1280.0f, 720.0f);*/
-
 
 		ImGui::NewFrame();
 		static bool show_demo_window = true;
 		ImGui::ShowDemoWindow(&show_demo_window);
 		ImGui::Render();
-		ImDrawData* draw_data = ImGui::GetDrawData();
+		ImDrawData* drawData = ImGui::GetDrawData();
 
 		const auto perFrameResourceIndex = frameIndex % vulkanContext.frameResourceCount;
 
@@ -937,12 +932,8 @@ void main()
 		vkCmdPushConstants(cmd, fullscreenQuadPassResources.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
 						   sizeof(float), &time);
 		vkCmdDraw(cmd, 3, 1, 0, 0);
-
-		ImGui_ImplVulkan_RenderDrawData(draw_data, cmd);
-
-
+		ImGui_ImplVulkan_RenderDrawData(drawData, cmd);
 		vkCmdEndRendering(cmd);
-
 
 #pragma endregion
 
@@ -1075,7 +1066,6 @@ void main()
 		vkDestroyDevice(vulkanContext.device, nullptr);
 		vkDestroyInstance(vulkanContext.instance, nullptr);
 	}
-
 #pragma endregion
 
 	SDL_DestroyWindow(window);

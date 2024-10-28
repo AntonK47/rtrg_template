@@ -2,7 +2,6 @@
 
 namespace Framework
 {
-
 	struct Application
 	{
 		static void Run();
