@@ -9,10 +9,16 @@
 #include <vector>
 
 #define VOLK_IMPLEMENTATION
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
 #include <volk.h>
 
+#define IMGUI_IMPL_VULKAN_NO_PROTOTYPES 
+#define IMGUI_IMPL_VULKAN_USE_VOLK
+#include <imgui.h>
+#include <imgui_impl_vulkan.h>
+#include <imgui_impl_sdl3.h>
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 struct PerFrameResource
 {
@@ -52,10 +58,20 @@ struct FullscreenQuadPassResources
 	VkPipeline pipeline;
 	VkPipelineLayout pipelineLayout;
 
-	void ReleaseResouces(VkDevice device)
+	void ReleaseResources(VkDevice device)
 	{
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyPipeline(device, pipeline, nullptr);
+	}
+};
+
+struct ImGuiPassResources
+{
+	VkDescriptorPool descriptorPool;
+
+	void ReleaseResources(VkDevice device)
+	{
+		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 	}
 };
 
@@ -391,7 +407,7 @@ void Framework::Application::Run()
 			assert(result == VK_SUCCESS);
 		}
 
-		//assume 2, for now
+		// assume 2, for now
 		vulkanContext.frameResourceCount = 2;
 
 		vulkanContext.perFrameResources.resize(vulkanContext.frameResourceCount);
@@ -728,6 +744,75 @@ void main()
 
 #pragma endregion
 
+#pragma region ImGui initialization
+
+
+	const auto t = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(vkGetInstanceProcAddr(vulkanContext.instance, "vkCmdBeginRenderingKHR"));
+
+	ImGuiPassResources imGuiPassResources{};
+	{
+		VkDescriptorPoolSize poolSizes[] = {
+			{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
+		};
+		VkDescriptorPoolCreateInfo poolInfo = {};
+		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+		poolInfo.maxSets = 1;
+		poolInfo.poolSizeCount = (uint32_t)IM_ARRAYSIZE(poolSizes);
+		poolInfo.pPoolSizes = poolSizes;
+		const auto result =
+			vkCreateDescriptorPool(vulkanContext.device, &poolInfo, nullptr, &imGuiPassResources.descriptorPool);
+		assert(result == VK_SUCCESS);
+	}
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+
+	ImGuiIO& io = ImGui::GetIO();
+	(void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
+
+	// Setup Dear ImGui style
+	ImGui::StyleColorsDark();
+
+	const auto pipelineRendering =
+		VkPipelineRenderingCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+									   .pNext = nullptr,
+									   .viewMask = 0,
+									   .colorAttachmentCount = 1,
+									   .pColorAttachmentFormats = &vulkanContext.swapchainImageFormat,
+									   .depthAttachmentFormat = VK_FORMAT_UNDEFINED,
+									   .stencilAttachmentFormat = VK_FORMAT_UNDEFINED };
+
+	ImGui_ImplVulkan_InitInfo init_info = {};
+	init_info.Instance = vulkanContext.instance;
+	init_info.PhysicalDevice = vulkanContext.physicalDevice;
+	init_info.Device = vulkanContext.device;
+	init_info.QueueFamily = vulkanContext.graphicsQueueFamilyIndex;
+	init_info.Queue = vulkanContext.graphicsQueue;
+	// init_info.PipelineCache = VK_NULL_HANDLE;
+	init_info.DescriptorPool = imGuiPassResources.descriptorPool;
+	//init_info.RenderPass = rp;
+	// init_info.Subpass = 0;
+	init_info.MinImageCount = vulkanContext.swapchainImageCount;
+	init_info.ImageCount = vulkanContext.swapchainImageCount;
+	init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+	init_info.Allocator = nullptr;
+	// init_info.CheckVkResultFn = check_vk_result;
+	init_info.UseDynamicRendering = true;
+	init_info.PipelineRenderingCreateInfo = pipelineRendering;
+
+
+	ImGui_ImplVulkan_LoadFunctions(
+		[](const char* function_name, void* vulkan_instance)
+		{ return vkGetInstanceProcAddr(*(reinterpret_cast<VkInstance*>(vulkan_instance)), function_name); },
+		&vulkanContext.instance);
+
+	ImGui_ImplVulkan_Init(&init_info);
+	ImGui_ImplSDL3_InitForVulkan(window);
+#pragma endregion
+
+
 	bool shouldRun = true;
 	auto frameIndex = uint32_t{ 0 };
 
@@ -737,6 +822,7 @@ void main()
 		SDL_Event event;
 		while (SDL_PollEvent(&event))
 		{
+			ImGui_ImplSDL3_ProcessEvent(&event);
 			if (event.type == SDL_EVENT_QUIT)
 			{
 				shouldRun = false;
@@ -744,6 +830,19 @@ void main()
 			}
 		}
 #pragma endregion
+
+
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplSDL3_NewFrame();
+		/*auto& io = ImGui::GetIO();
+		io.DisplaySize = ImVec2(1280.0f, 720.0f);*/
+
+
+		ImGui::NewFrame();
+		static bool show_demo_window = true;
+		ImGui::ShowDemoWindow(&show_demo_window);
+		ImGui::Render();
+		ImDrawData* draw_data = ImGui::GetDrawData();
 
 		const auto perFrameResourceIndex = frameIndex % vulkanContext.frameResourceCount;
 
@@ -862,7 +961,12 @@ void main()
 						   sizeof(float), &time);
 		vkCmdDraw(cmd, 3, 1, 0, 0);
 
+		ImGui_ImplVulkan_RenderDrawData(draw_data, cmd);
+
+
 		vkCmdEndRendering(cmd);
+
+
 #pragma endregion
 
 #pragma region Resource transition [color attachment -> presentable image]
@@ -965,6 +1069,10 @@ void main()
 		assert(result == VK_SUCCESS);
 	}
 
+	ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+
 	{
 		for (auto i = 0; i < vulkanContext.swapchainImageCount; i++)
 		{
@@ -985,7 +1093,7 @@ void main()
 
 		SDL_Vulkan_DestroySurface(vulkanContext.instance, vulkanContext.surface, nullptr);
 
-		fullscreenQuadPassResources.ReleaseResouces(vulkanContext.device);
+		fullscreenQuadPassResources.ReleaseResources(vulkanContext.device);
 
 		vkDestroyDevice(vulkanContext.device, nullptr);
 		vkDestroyInstance(vulkanContext.instance, nullptr);
