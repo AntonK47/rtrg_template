@@ -1,6 +1,7 @@
 find_package(glslang CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(VulkanHeaders CONFIG)
+#find_package(imgui CONFIG REQUIRED)
 
 set(FRAMEWORK_NAME TemplateFramework)
 
@@ -26,5 +27,6 @@ PRIVATE
 	volk::volk_headers
 	Vulkan::Headers
 	SDL3::SDL3-static
+	imgui::imgui
 )
 
