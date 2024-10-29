@@ -7,7 +7,7 @@ layout(location = 0) in vec2 uv;
 layout(push_constant) uniform SomeValues { float time; } values;
 
 #define iTime values.time
-const vec2 iResolution = vec2(1280.0f, 720.0f);
+const vec2 iResolution = vec2(1920.0f, 1080.0f);
 const vec2 iMouse = vec2(0.0f, 0.0f);
 /*
 

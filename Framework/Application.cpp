@@ -20,6 +20,11 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+
 struct PerFrameResource
 {
 	VkSemaphore readyToPresent;
@@ -36,6 +41,8 @@ struct VulkanContext
 	VkInstance instance;
 	VkPhysicalDevice physicalDevice;
 	VkDevice device;
+
+	VmaAllocator allocator;
 
 	uint32_t graphicsQueueFamilyIndex{};
 	VkQueue graphicsQueue;
@@ -87,7 +94,7 @@ void Framework::Application::Run()
 	const auto applicationName = "Template Application";
 
 	SDL_Window* window =
-		SDL_CreateWindow(applicationName, 1280, 720, SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+		SDL_CreateWindow(applicationName, 1920, 1080, SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 	// could be replaced with win32 window, see minimal example here
 	// https://learn.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program?source=recommendations
 
@@ -291,6 +298,52 @@ void Framework::Application::Run()
 	volkLoadDevice(vulkanContext.device);
 #pragma endregion
 
+#pragma region Initialize VMA
+	{
+		const auto vulkanFunctions =
+			VmaVulkanFunctions{ .vkGetInstanceProcAddr = vkGetInstanceProcAddr,
+								.vkGetDeviceProcAddr = vkGetDeviceProcAddr,
+								.vkGetPhysicalDeviceProperties = vkGetPhysicalDeviceProperties,
+								.vkGetPhysicalDeviceMemoryProperties = vkGetPhysicalDeviceMemoryProperties,
+								.vkAllocateMemory = vkAllocateMemory,
+								.vkFreeMemory = vkFreeMemory,
+								.vkMapMemory = vkMapMemory,
+								.vkUnmapMemory = vkUnmapMemory,
+								.vkFlushMappedMemoryRanges = vkFlushMappedMemoryRanges,
+								.vkInvalidateMappedMemoryRanges = vkInvalidateMappedMemoryRanges,
+								.vkBindBufferMemory = vkBindBufferMemory,
+								.vkBindImageMemory = vkBindImageMemory,
+								.vkGetBufferMemoryRequirements = vkGetBufferMemoryRequirements,
+								.vkGetImageMemoryRequirements = vkGetImageMemoryRequirements,
+								.vkCreateBuffer = vkCreateBuffer,
+								.vkDestroyBuffer = vkDestroyBuffer,
+								.vkCreateImage = vkCreateImage,
+								.vkDestroyImage = vkDestroyImage,
+								.vkCmdCopyBuffer = vkCmdCopyBuffer,
+								.vkGetBufferMemoryRequirements2KHR = vkGetBufferMemoryRequirements2,
+								.vkGetImageMemoryRequirements2KHR = vkGetImageMemoryRequirements2,
+								.vkBindBufferMemory2KHR = vkBindBufferMemory2,
+								.vkBindImageMemory2KHR = vkBindImageMemory2,
+								.vkGetPhysicalDeviceMemoryProperties2KHR = vkGetPhysicalDeviceMemoryProperties2,
+								.vkGetDeviceBufferMemoryRequirements = vkGetDeviceBufferMemoryRequirements,
+								.vkGetDeviceImageMemoryRequirements = vkGetDeviceImageMemoryRequirements };
+
+
+		const auto allocatorCreateInfo = VmaAllocatorCreateInfo{
+			.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT,
+			.physicalDevice = vulkanContext.physicalDevice,
+			.device = vulkanContext.device,
+			.pVulkanFunctions = &vulkanFunctions,
+			.instance = vulkanContext.instance,
+			.vulkanApiVersion = VK_API_VERSION_1_3
+		};
+		
+		const auto result = vmaCreateAllocator(&allocatorCreateInfo, &vulkanContext.allocator);
+		assert(result == VK_SUCCESS);
+	}
+#pragma endregion
+
+
 #pragma region Swapchain creation
 	{
 		const auto result = SDL_Vulkan_CreateSurface(window, vulkanContext.instance, nullptr, &vulkanContext.surface);
@@ -350,9 +403,9 @@ void Framework::Application::Run()
 			assert(result == VK_SUCCESS);
 
 			assert(formats.size() > 0);
-			// check if rgba srgb available
+			// TODO: be sure the format is available on current device
 			const auto found = std::find_if(formats.begin(), formats.end(), [](const VkSurfaceFormat2KHR& format)
-											{ return format.surfaceFormat.format == VK_FORMAT_R8G8B8A8_SRGB; });
+											{ return format.surfaceFormat.format == VK_FORMAT_R8G8B8A8_UNORM; });
 			auto format = VkSurfaceFormat2KHR{};
 			if (found != formats.end())
 			{
@@ -757,6 +810,9 @@ void main()
 	ImGui::CreateContext();
 
 	ImGuiIO& io = ImGui::GetIO();
+	float dpiScale = SDL_GetWindowDisplayScale(window);
+	io.FontGlobalScale = dpiScale;
+
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
@@ -913,7 +969,7 @@ void main()
 		const auto renderingInfo = VkRenderingInfo{ .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
 													.pNext = nullptr,
 													.flags = 0,
-													.renderArea = VkRect2D{ { 0, 0 }, { 1280, 720 } },
+													.renderArea = VkRect2D{ { 0, 0 }, { 1920, 1080 } },
 													.layerCount = 1,
 													.viewMask = 0,
 													.colorAttachmentCount = 1,
@@ -923,9 +979,9 @@ void main()
 		vkCmdBeginRendering(cmd, &renderingInfo);
 
 		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fullscreenQuadPassResources.pipeline);
-		const auto viewport = VkViewport{ 0.0f, 0.0f, 1280.0f, 720.0f, 0.0f, 1.0f };
+		const auto viewport = VkViewport{ 0.0f, 0.0f, 1920.0f, 1080.0f, 0.0f, 1.0f };
 		vkCmdSetViewport(cmd, 0, 1, &viewport);
-		const auto scissor = VkRect2D{ { 0, 0 }, { 1280, 720 } };
+		const auto scissor = VkRect2D{ { 0, 0 }, { 1920, 1080 } };
 		vkCmdSetScissor(cmd, 0, 1, &scissor);
 		static float time = 0.0f;
 		time += 0.01f;
@@ -1035,6 +1091,10 @@ void main()
 	{
 		const auto result = vkQueueWaitIdle(vulkanContext.graphicsQueue);
 		assert(result == VK_SUCCESS);
+	}
+
+	{
+		vmaDestroyAllocator(vulkanContext.allocator);
 	}
 
 	ImGui_ImplVulkan_Shutdown();
