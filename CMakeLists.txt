@@ -17,6 +17,7 @@ set_property(TARGET CopyAssets PROPERTY FOLDER "utility")
 add_subdirectory(Framework)
 add_subdirectory(Application)
 add_subdirectory(ThirdParty EXCLUDE_FROM_ALL TRUE)
+enable_testing()
 add_subdirectory(Test)
 
 if(MSVC)

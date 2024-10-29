@@ -1,7 +1,7 @@
 find_package(glslang CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(VulkanHeaders CONFIG)
-#find_package(imgui CONFIG REQUIRED)
+find_package(assimp CONFIG REQUIRED)
 
 set(FRAMEWORK_NAME TemplateFramework)
 
@@ -15,6 +15,8 @@ PRIVATE
     Utils.hpp
 	Application.hpp
 	Application.cpp
+	MeshImporter.hpp
+	MeshImporter.cpp
 )
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)
@@ -28,5 +30,6 @@ PRIVATE
 	Vulkan::Headers
 	SDL3::SDL3-static
 	imgui::imgui
+	assimp::assimp
 )
 
