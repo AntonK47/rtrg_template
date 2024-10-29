@@ -63,6 +63,7 @@ namespace Framework
 	struct MeshData
 	{
 		std::vector<VertexStream> streams;
+		StreamDataBuffer indexStream;
 	};
 
 	struct AssetImporter final
