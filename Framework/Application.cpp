@@ -6,6 +6,7 @@
 #include <cassert>
 #include <filesystem>
 #include <fstream>
+#include <queue>
 #include <vector>
 
 #define VOLK_IMPLEMENTATION
@@ -24,6 +25,8 @@
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
+
+#include "MeshImporter.hpp"
 
 struct PerFrameResource
 {
@@ -46,6 +49,10 @@ struct VulkanContext
 
 	uint32_t graphicsQueueFamilyIndex{};
 	VkQueue graphicsQueue;
+
+	// We assume that on the dedicated gpu we always have an graphics independent transfer queue
+	uint32_t transferQueueFamilyIndex{};
+	VkQueue transferQueue{};
 
 	VkSurfaceKHR surface;
 	VkSwapchainKHR swapchain;
@@ -80,6 +87,234 @@ struct ImGuiPassResources
 	{
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 	}
+};
+
+struct GraphicsBuffer
+{
+	VmaAllocation allocation;
+	VkBuffer buffer;
+};
+
+struct StaticMesh
+{
+	// has only one stream position
+	uint32_t instanceOffset;
+	uint32_t vertexCount;
+};
+
+struct Scene
+{
+	void LoadScene();
+	void ReleaseResources();
+	void CreateResources(const VulkanContext& vulkanContext)
+	{
+		{
+			const auto poolCreateInfo =
+				VkCommandPoolCreateInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+										 .pNext = nullptr,
+										 .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+										 .queueFamilyIndex = vulkanContext.transferQueueFamilyIndex };
+
+			const auto resutl = vkCreateCommandPool(vulkanContext.device, &poolCreateInfo, nullptr, &commandPool);
+			assert(resutl == VK_SUCCESS);
+		}
+
+		{
+			const auto allocateCreateInfo = VkCommandBufferAllocateInfo{
+				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+				.pNext = nullptr,
+				.commandPool = commandPool,
+				.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+				.commandBufferCount = 1,
+			};
+
+			const auto resutl = vkAllocateCommandBuffers(vulkanContext.device, &allocateCreateInfo, &commandBufer);
+			assert(resutl == VK_SUCCESS);
+		}
+
+		{
+
+			constexpr auto geometryBufferDefaultSize = VkDeviceSize{ 128 * 1024 * 1024 };
+			const auto bufferInfo =
+				VkBufferCreateInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+									.pNext = nullptr,
+									.flags = 0,
+									.size = geometryBufferDefaultSize,
+									.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+									.sharingMode = VK_SHARING_MODE_EXCLUSIVE };
+
+			const auto allocationInfo = VmaAllocationCreateInfo{ .usage = VMA_MEMORY_USAGE_GPU_ONLY };
+
+			const auto result = vmaCreateBuffer(vulkanContext.allocator, &bufferInfo, &allocationInfo,
+												&geometryBuffer.buffer, &geometryBuffer.allocation, nullptr);
+			assert(result == VK_SUCCESS);
+		}
+		{
+
+			constexpr auto geometryIndexBufferDefaultSize = VkDeviceSize{ 128 * 1024 * 1024 };
+			const auto bufferInfo =
+				VkBufferCreateInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+									.pNext = nullptr,
+									.flags = 0,
+									.size = geometryIndexBufferDefaultSize,
+									.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+									.sharingMode = VK_SHARING_MODE_EXCLUSIVE };
+
+			const auto allocationInfo = VmaAllocationCreateInfo{ .usage = VMA_MEMORY_USAGE_GPU_ONLY };
+
+			const auto result = vmaCreateBuffer(vulkanContext.allocator, &bufferInfo, &allocationInfo,
+												&geometryIndexBuffer.buffer, &geometryIndexBuffer.allocation, nullptr);
+			assert(result == VK_SUCCESS);
+		}
+		{
+			const auto bufferInfo = VkBufferCreateInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+														.pNext = nullptr,
+														.flags = 0,
+														.size = stagingBufferSize,
+														.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+														.sharingMode = VK_SHARING_MODE_EXCLUSIVE };
+
+			const auto allocationInfo =
+				VmaAllocationCreateInfo{ .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+										 .usage = VMA_MEMORY_USAGE_CPU_TO_GPU };
+
+			const auto result = vmaCreateBuffer(vulkanContext.allocator, &bufferInfo, &allocationInfo,
+												&stagingBuffer.buffer, &stagingBuffer.allocation, nullptr);
+			assert(result == VK_SUCCESS);
+		}
+		{
+			const auto fenceCreateInfo = VkFenceCreateInfo{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+															.pNext = nullptr,
+															.flags = VK_FENCE_CREATE_SIGNALED_BIT };
+			const auto result = vkCreateFence(vulkanContext.device, &fenceCreateInfo, nullptr, &stagingBufferReuse);
+			assert(result == VK_SUCCESS);
+		}
+	}
+
+	void ReleaseResources(const VulkanContext& vulkanContext)
+	{
+		vkDestroyFence(vulkanContext.device, stagingBufferReuse, nullptr);
+		vmaDestroyBuffer(vulkanContext.allocator, stagingBuffer.buffer, stagingBuffer.allocation);
+		vmaDestroyBuffer(vulkanContext.allocator, geometryBuffer.buffer, geometryBuffer.allocation);
+		vmaDestroyBuffer(vulkanContext.allocator, geometryIndexBuffer.buffer, geometryIndexBuffer.allocation);
+	}
+
+	void Upload(const std::string_view mesh, const VulkanContext& vulkanContext)
+	{
+		auto importer = Framework::AssetImporter(std::filesystem::path{ mesh });
+
+		const auto importSettings =
+			Framework::MeshImportSettings{ .verticesStreamDeclarations = { Framework::VerticesStreamDeclaration{
+											   .hasPosition = true, .hasNormal = true } } };
+		const auto meshData = importer.ImportMesh(0, importSettings);
+
+		struct DataUploadRegion
+		{
+			uint64_t memoryPtr;
+			uint32_t offeset;
+			uint32_t size;
+		};
+
+		std::queue<DataUploadRegion> uploadRequests;
+		const auto buckets = (meshData.indexStream.size() + stagingBufferSize) / stagingBufferSize;
+		for (auto i = 0; i < buckets; i++)
+		{
+			const auto uploadSize =
+				i < buckets - 1 ? stagingBufferSize : meshData.indexStream.size() % stagingBufferSize;
+			uploadRequests.push(DataUploadRegion{ (uint64_t)meshData.indexStream.data(),
+												  (uint32_t)(i * stagingBufferSize), (uint32_t)uploadSize });
+		}
+		/*for (auto i = 0; i < meshData.streams[0].data.size() / stagingBufferSize; i++)
+		{
+		}*/
+
+		void* dataPtr;
+		const auto result = vmaMapMemory(vulkanContext.allocator, stagingBuffer.allocation, &dataPtr);
+		assert(result == VK_SUCCESS);
+
+
+		while (!uploadRequests.empty())
+		{
+			{
+				const auto result = vkWaitForFences(vulkanContext.device, 1, &stagingBufferReuse, VK_TRUE, ~0ull);
+				assert(result == VK_SUCCESS);
+			}
+			{
+				const auto result = vkResetFences(vulkanContext.device, 1, &stagingBufferReuse);
+				assert(result == VK_SUCCESS);
+			}
+
+			const auto request = uploadRequests.front();
+			uploadRequests.pop();
+
+
+			std::memcpy(dataPtr, (char*)request.memoryPtr + request.offeset, request.size);
+			vmaFlushAllocation(vulkanContext.allocator, geometryIndexBuffer.allocation, 0, stagingBufferSize);
+			const auto region = VkBufferCopy2{ .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+											   .pNext = nullptr,
+											   .srcOffset = 0,
+											   .dstOffset = geometryIndexBufferFreeOffset,
+											   .size = request.size };
+
+			const auto copyBufferInfo = VkCopyBufferInfo2{ .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+														   .pNext = nullptr,
+														   .srcBuffer = stagingBuffer.buffer,
+														   .dstBuffer = geometryIndexBuffer.buffer,
+														   .regionCount = 1,
+														   .pRegions = &region };
+
+			{
+				const auto beginInfo = VkCommandBufferBeginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+																 .pNext = nullptr,
+																 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+																 .pInheritanceInfo = nullptr };
+				const auto result = vkBeginCommandBuffer(commandBufer, &beginInfo);
+				assert(result == VK_SUCCESS);
+			}
+
+			vkCmdCopyBuffer2(commandBufer, &copyBufferInfo);
+
+			{
+				const auto result = vkEndCommandBuffer(commandBufer);
+				assert(result == VK_SUCCESS);
+			}
+
+			const auto bufferSubmitInfos =
+				std::array{ VkCommandBufferSubmitInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+													   .pNext = nullptr,
+													   .commandBuffer = commandBufer,
+													   .deviceMask = 1 } };
+
+			const auto submit = VkSubmitInfo2{
+				.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+				.pNext = nullptr,
+				.flags = 0,
+				.waitSemaphoreInfoCount = 0,
+				.pWaitSemaphoreInfos = nullptr,
+				.commandBufferInfoCount = static_cast<uint32_t>(bufferSubmitInfos.size()),
+				.pCommandBufferInfos = bufferSubmitInfos.data(),
+				.signalSemaphoreInfoCount = 0,
+				.pSignalSemaphoreInfos = nullptr,
+			};
+			const auto result = vkQueueSubmit2(vulkanContext.transferQueue, 1, &submit, stagingBufferReuse);
+			assert(result == VK_SUCCESS);
+			geometryBufferFreeOffset += request.size;
+		}
+	}
+
+	static constexpr VkDeviceSize stagingBufferSize{ 1 * 1024 * 1024 };
+	GraphicsBuffer stagingBuffer{};
+	VkFence stagingBufferReuse;
+
+
+	VkCommandPool commandPool;
+	VkCommandBuffer commandBufer;
+
+	GraphicsBuffer geometryBuffer{};
+	uint32_t geometryBufferFreeOffset{ 0 };
+	GraphicsBuffer geometryIndexBuffer{};
+	uint32_t geometryIndexBufferFreeOffset{ 0 };
+	std::vector<StaticMesh> meshes;
 };
 
 void Framework::Application::Run()
@@ -174,6 +409,7 @@ void Framework::Application::Run()
 			uint32_t rating{ 0 };
 			bool hasGraphicsQueue{ false };
 			uint32_t graphicsQueueFamilyIndex{};
+			uint32_t transferQueueFamilyIndex{};
 			bool isDiscrete{ false };
 		};
 
@@ -202,7 +438,7 @@ void Framework::Application::Run()
 														  queueFamilyProperties.data());
 
 				auto hasRequiredGraphicsQueueFamily = false;
-				auto foundIndex = 0;
+				auto foundGraphicsIndex = 0;
 
 				// SEARCH FOR GRAPHICS QUEUE WITH PRESENT SUPPORT
 				for (auto index = 0; index < queueFamilyProperties.size(); index++)
@@ -216,15 +452,31 @@ void Framework::Application::Run()
 
 					if (hasRequiredGraphicsQueueFamily)
 					{
-						foundIndex = index;
+						foundGraphicsIndex = index;
 						break;
 					}
 				}
 
-				if (hasRequiredGraphicsQueueFamily)
+				auto hasRequiredTransferQueueFamily = false;
+				auto foundTransferIndex = 0;
+				// SEARCH FOR TRANSFER QUEUE
+				for (auto index = 0; index < queueFamilyProperties.size(); index++)
+				{
+					hasRequiredTransferQueueFamily = (queueFamilyProperties[i].queueFamilyProperties.queueFlags &
+													  VK_QUEUE_TRANSFER_BIT) == VK_QUEUE_TRANSFER_BIT;
+
+					if (hasRequiredTransferQueueFamily and (index != foundGraphicsIndex))
+					{
+						foundTransferIndex = index;
+						break;
+					}
+				}
+
+				if (hasRequiredGraphicsQueueFamily and hasRequiredTransferQueueFamily)
 				{
 					physicalDevicesQuery[i].hasGraphicsQueue = hasRequiredGraphicsQueueFamily;
-					physicalDevicesQuery[i].graphicsQueueFamilyIndex = foundIndex;
+					physicalDevicesQuery[i].graphicsQueueFamilyIndex = foundGraphicsIndex;
+					physicalDevicesQuery[i].transferQueueFamilyIndex = foundTransferIndex;
 					physicalDevicesQuery[i].rating += 100;
 				}
 			}
@@ -253,6 +505,9 @@ void Framework::Application::Run()
 
 			vulkanContext.physicalDevice = physicalDevices[bestCandidateIndex];
 			vulkanContext.graphicsQueueFamilyIndex = physicalDevicesQuery[bestCandidateIndex].graphicsQueueFamilyIndex;
+			vulkanContext.transferQueueFamilyIndex = physicalDevicesQuery[bestCandidateIndex].transferQueueFamilyIndex;
+			// TODO: Again, we require independent graphics and transfer queue for now!
+			assert(vulkanContext.graphicsQueueFamilyIndex != vulkanContext.transferQueueFamilyIndex);
 		}
 	}
 #pragma endregion
@@ -269,8 +524,13 @@ void Framework::Application::Run()
 												 .flags = 0,
 												 .queueFamilyIndex = vulkanContext.graphicsQueueFamilyIndex,
 												 .queueCount = 1,
+												 .pQueuePriorities = &queuePriority },
+						VkDeviceQueueCreateInfo{ .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+												 .pNext = nullptr,
+												 .flags = 0,
+												 .queueFamilyIndex = vulkanContext.transferQueueFamilyIndex,
+												 .queueCount = 1,
 												 .pQueuePriorities = &queuePriority } };
-
 
 		auto physicalDeviceFeatures13 = VkPhysicalDeviceVulkan13Features{};
 		physicalDeviceFeatures13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -329,15 +589,13 @@ void Framework::Application::Run()
 								.vkGetDeviceImageMemoryRequirements = vkGetDeviceImageMemoryRequirements };
 
 
-		const auto allocatorCreateInfo = VmaAllocatorCreateInfo{
-			.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT,
-			.physicalDevice = vulkanContext.physicalDevice,
-			.device = vulkanContext.device,
-			.pVulkanFunctions = &vulkanFunctions,
-			.instance = vulkanContext.instance,
-			.vulkanApiVersion = VK_API_VERSION_1_3
-		};
-		
+		const auto allocatorCreateInfo = VmaAllocatorCreateInfo{ .flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT,
+																 .physicalDevice = vulkanContext.physicalDevice,
+																 .device = vulkanContext.device,
+																 .pVulkanFunctions = &vulkanFunctions,
+																 .instance = vulkanContext.instance,
+																 .vulkanApiVersion = VK_API_VERSION_1_3 };
+
 		const auto result = vmaCreateAllocator(&allocatorCreateInfo, &vulkanContext.allocator);
 		assert(result == VK_SUCCESS);
 	}
@@ -544,7 +802,7 @@ void Framework::Application::Run()
 	}
 #pragma endregion
 
-#pragma region Request graphics queue
+#pragma region Request graphics and transfer queue
 	{
 		const auto deviceQueueInfo = VkDeviceQueueInfo2{ .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
 														 .pNext = nullptr,
@@ -552,6 +810,14 @@ void Framework::Application::Run()
 														 .queueFamilyIndex = vulkanContext.graphicsQueueFamilyIndex,
 														 .queueIndex = 0 };
 		vkGetDeviceQueue2(vulkanContext.device, &deviceQueueInfo, &vulkanContext.graphicsQueue);
+	}
+	{
+		const auto deviceQueueInfo = VkDeviceQueueInfo2{ .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+														 .pNext = nullptr,
+														 .flags = 0,
+														 .queueFamilyIndex = vulkanContext.transferQueueFamilyIndex,
+														 .queueIndex = 0 };
+		vkGetDeviceQueue2(vulkanContext.device, &deviceQueueInfo, &vulkanContext.transferQueue);
 	}
 #pragma endregion
 
@@ -845,6 +1111,12 @@ void main()
 	ImGui_ImplSDL3_InitForVulkan(window);
 #pragma endregion
 
+#pragma region Scene preparation
+	auto scene = Scene{};
+	scene.CreateResources(vulkanContext);
+	scene.Upload("Assets/Meshes/bunny.obj", vulkanContext);
+#pragma endregion
+
 	bool shouldRun = true;
 	auto frameIndex = uint32_t{ 0 };
 
@@ -1094,6 +1366,7 @@ void main()
 	}
 
 	{
+		scene.ReleaseResources(vulkanContext);
 		vmaDestroyAllocator(vulkanContext.allocator);
 	}
 
