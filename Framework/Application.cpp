@@ -64,6 +64,19 @@ struct VulkanContext
 
 	uint32_t frameResourceCount{};
 	std::vector<PerFrameResource> perFrameResources{};
+
+	void setObjectDebugName(VkObjectType objectType, uint64_t objectHandle, const char* name) const
+	{
+
+		const auto nameInfo =
+			VkDebugUtilsObjectNameInfoEXT{ .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+										   .pNext = nullptr,
+										   .objectType = objectType,
+										   .objectHandle = objectHandle,
+										   .pObjectName = name };
+		const auto result = vkSetDebugUtilsObjectNameEXT(device, &nameInfo);
+		assert(result == VK_SUCCESS);
+	}
 };
 
 struct FullscreenQuadPassResources
@@ -98,7 +111,8 @@ struct GraphicsBuffer
 struct StaticMesh
 {
 	// has only one stream position
-	uint32_t instanceOffset;
+	uint32_t indicesOffset;
+	uint32_t verticesOffset;
 	uint32_t vertexCount;
 };
 
@@ -109,16 +123,79 @@ struct Scene
 	void CreateResources(const VulkanContext& vulkanContext)
 	{
 		{
+			const auto bindings =
+				std::array{ VkDescriptorSetLayoutBinding{ .binding = 0,
+														  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+														  .descriptorCount = 1,
+														  .stageFlags = VK_SHADER_STAGE_ALL,
+														  .pImmutableSamplers = nullptr },
+							VkDescriptorSetLayoutBinding{ .binding = 1,
+														  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+														  .descriptorCount = 1,
+														  .stageFlags = VK_SHADER_STAGE_ALL,
+														  .pImmutableSamplers = nullptr } };
+
+			const auto descriptorSetLayoutCreateInfo =
+				VkDescriptorSetLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+												 .pNext = nullptr,
+												 .flags = 0, //VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT,
+												 .bindingCount = bindings.size(),
+												 .pBindings = bindings.data() };
+
+			const auto result = vkCreateDescriptorSetLayout(vulkanContext.device, &descriptorSetLayoutCreateInfo,
+															nullptr, &geomtryDescriptorSetLayout);
+			assert(result == VK_SUCCESS);
+			vulkanContext.setObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, (uint64_t)geomtryDescriptorSetLayout, "geometryDSLayout");
+		}
+
+		/*{
+
+			std::vector<std::byte> descriptorBuffer;
+
+
+			const auto descriptorGetInfo = VkDescriptorGetInfoEXT{
+
+			};
+
+			vkGetDescriptorEXT(vulkanContext.device, &descriptorGetInfo, 3, descriptorBuffer.data());
+		}*/
+
+		{
+			const auto poolSize =
+				VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 2 };
+
+			const auto descriptorPoolCreateInfo =
+				VkDescriptorPoolCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+											.pNext = nullptr,
+											.flags = 0,
+											.maxSets = 1,
+											.poolSizeCount = 1,
+											.pPoolSizes = &poolSize };
+			const auto result = vkCreateDescriptorPool(vulkanContext.device, &descriptorPoolCreateInfo, nullptr,
+													   &geometryDescriptorPool);
+			assert(result == VK_SUCCESS);
+		}
+		{
+			const auto allocationInfo =
+				VkDescriptorSetAllocateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+											 .pNext = nullptr,
+											 .descriptorPool = geometryDescriptorPool,
+											 .descriptorSetCount = 1,
+											 .pSetLayouts = &geomtryDescriptorSetLayout };
+			const auto result = vkAllocateDescriptorSets(vulkanContext.device, &allocationInfo, &geometryDescriptorSet);
+			assert(result == VK_SUCCESS);
+			vulkanContext.setObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET, (uint64_t)geometryDescriptorSet, "geometryDS");
+		}
+		{
 			const auto poolCreateInfo =
 				VkCommandPoolCreateInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 										 .pNext = nullptr,
 										 .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
 										 .queueFamilyIndex = vulkanContext.transferQueueFamilyIndex };
 
-			const auto resutl = vkCreateCommandPool(vulkanContext.device, &poolCreateInfo, nullptr, &commandPool);
-			assert(resutl == VK_SUCCESS);
+			const auto result = vkCreateCommandPool(vulkanContext.device, &poolCreateInfo, nullptr, &commandPool);
+			assert(result == VK_SUCCESS);
 		}
-
 		{
 			const auto allocateCreateInfo = VkCommandBufferAllocateInfo{
 				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -128,8 +205,8 @@ struct Scene
 				.commandBufferCount = 1,
 			};
 
-			const auto resutl = vkAllocateCommandBuffers(vulkanContext.device, &allocateCreateInfo, &commandBufer);
-			assert(resutl == VK_SUCCESS);
+			const auto result = vkAllocateCommandBuffers(vulkanContext.device, &allocateCreateInfo, &commandBufer);
+			assert(result == VK_SUCCESS);
 		}
 
 		{
@@ -148,6 +225,8 @@ struct Scene
 			const auto result = vmaCreateBuffer(vulkanContext.allocator, &bufferInfo, &allocationInfo,
 												&geometryBuffer.buffer, &geometryBuffer.allocation, nullptr);
 			assert(result == VK_SUCCESS);
+			vulkanContext.setObjectDebugName(VK_OBJECT_TYPE_BUFFER, (uint64_t)geometryBuffer.buffer,
+											 "Global Vertex Buffer");
 		}
 		{
 
@@ -165,6 +244,8 @@ struct Scene
 			const auto result = vmaCreateBuffer(vulkanContext.allocator, &bufferInfo, &allocationInfo,
 												&geometryIndexBuffer.buffer, &geometryIndexBuffer.allocation, nullptr);
 			assert(result == VK_SUCCESS);
+			vulkanContext.setObjectDebugName(VK_OBJECT_TYPE_BUFFER, (uint64_t)geometryIndexBuffer.buffer,
+											 "Global Index Buffer");
 		}
 		{
 			const auto bufferInfo = VkBufferCreateInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -181,6 +262,13 @@ struct Scene
 			const auto result = vmaCreateBuffer(vulkanContext.allocator, &bufferInfo, &allocationInfo,
 												&stagingBuffer.buffer, &stagingBuffer.allocation, nullptr);
 			assert(result == VK_SUCCESS);
+
+			vulkanContext.setObjectDebugName(VK_OBJECT_TYPE_BUFFER, (uint64_t)stagingBuffer.buffer,
+											 "Geometry Staging Buffer");
+		}
+		{
+			const auto result = vmaMapMemory(vulkanContext.allocator, stagingBuffer.allocation, &stagingBufferPtr);
+			assert(result == VK_SUCCESS);
 		}
 		{
 			const auto fenceCreateInfo = VkFenceCreateInfo{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -188,18 +276,54 @@ struct Scene
 															.flags = VK_FENCE_CREATE_SIGNALED_BIT };
 			const auto result = vkCreateFence(vulkanContext.device, &fenceCreateInfo, nullptr, &stagingBufferReuse);
 			assert(result == VK_SUCCESS);
+			vulkanContext.setObjectDebugName(VK_OBJECT_TYPE_FENCE, (uint64_t)stagingBufferReuse,
+											 "Staging Buffer Reuse Fance");
+		}
+
+		{
+			const auto geometryBufferInfo =
+				VkDescriptorBufferInfo{ .buffer = geometryBuffer.buffer, .offset = 0, .range = VK_WHOLE_SIZE };
+
+			const auto geometryIndexBufferInfo =
+				VkDescriptorBufferInfo{ .buffer = geometryIndexBuffer.buffer, .offset = 0, .range = VK_WHOLE_SIZE };
+			const auto dsWrites = std::array{ VkWriteDescriptorSet{
+												  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+												  .pNext = nullptr,
+												  .dstSet = geometryDescriptorSet,
+												  .dstBinding = 0,
+												  .dstArrayElement = 0,
+												  .descriptorCount = 1,
+												  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+												  .pImageInfo = nullptr,
+												  .pBufferInfo = &geometryBufferInfo,
+												  .pTexelBufferView = nullptr,
+											  },
+											  VkWriteDescriptorSet{
+												  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+												  .pNext = nullptr,
+												  .dstSet = geometryDescriptorSet,
+												  .dstBinding = 1,
+												  .dstArrayElement = 0,
+												  .descriptorCount = 1,
+												  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+												  .pImageInfo = nullptr,
+												  .pBufferInfo = &geometryIndexBufferInfo,
+												  .pTexelBufferView = nullptr,
+											  } };
+			vkUpdateDescriptorSets(vulkanContext.device, dsWrites.size(), dsWrites.data(), 0, nullptr);
 		}
 	}
 
 	void ReleaseResources(const VulkanContext& vulkanContext)
 	{
+		vmaUnmapMemory(vulkanContext.allocator, stagingBuffer.allocation);
 		vkDestroyFence(vulkanContext.device, stagingBufferReuse, nullptr);
 		vmaDestroyBuffer(vulkanContext.allocator, stagingBuffer.buffer, stagingBuffer.allocation);
 		vmaDestroyBuffer(vulkanContext.allocator, geometryBuffer.buffer, geometryBuffer.allocation);
 		vmaDestroyBuffer(vulkanContext.allocator, geometryIndexBuffer.buffer, geometryIndexBuffer.allocation);
 	}
 
-	void Upload(const std::string_view mesh, const VulkanContext& vulkanContext)
+	StaticMesh Upload(const std::string_view mesh, const VulkanContext& vulkanContext)
 	{
 		auto importer = Framework::AssetImporter(std::filesystem::path{ mesh });
 
@@ -213,24 +337,30 @@ struct Scene
 			uint64_t memoryPtr;
 			uint32_t offeset;
 			uint32_t size;
+			bool isIndexData{ false };
 		};
 
 		std::queue<DataUploadRegion> uploadRequests;
-		const auto buckets = (meshData.indexStream.size() + stagingBufferSize) / stagingBufferSize;
+		auto buckets = (meshData.indexStream.size() + stagingBufferSize) / stagingBufferSize;
 		for (auto i = 0; i < buckets; i++)
 		{
 			const auto uploadSize =
 				i < buckets - 1 ? stagingBufferSize : meshData.indexStream.size() % stagingBufferSize;
 			uploadRequests.push(DataUploadRegion{ (uint64_t)meshData.indexStream.data(),
-												  (uint32_t)(i * stagingBufferSize), (uint32_t)uploadSize });
+												  (uint32_t)(i * stagingBufferSize), (uint32_t)uploadSize, true });
+		}
+
+		buckets = (meshData.streams[0].data.size() + stagingBufferSize) / stagingBufferSize;
+		for (auto i = 0; i < buckets; i++)
+		{
+			const auto uploadSize =
+				i < buckets - 1 ? stagingBufferSize : meshData.streams[0].data.size() % stagingBufferSize;
+			uploadRequests.push(DataUploadRegion{ (uint64_t)meshData.streams[0].data.data(),
+												  (uint32_t)(i * stagingBufferSize), (uint32_t)uploadSize, false });
 		}
 		/*for (auto i = 0; i < meshData.streams[0].data.size() / stagingBufferSize; i++)
 		{
 		}*/
-
-		void* dataPtr;
-		const auto result = vmaMapMemory(vulkanContext.allocator, stagingBuffer.allocation, &dataPtr);
-		assert(result == VK_SUCCESS);
 
 
 		while (!uploadRequests.empty())
@@ -248,20 +378,26 @@ struct Scene
 			uploadRequests.pop();
 
 
-			std::memcpy(dataPtr, (char*)request.memoryPtr + request.offeset, request.size);
-			vmaFlushAllocation(vulkanContext.allocator, geometryIndexBuffer.allocation, 0, stagingBufferSize);
-			const auto region = VkBufferCopy2{ .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
-											   .pNext = nullptr,
-											   .srcOffset = 0,
-											   .dstOffset = geometryIndexBufferFreeOffset,
-											   .size = request.size };
+			const auto isIndexData = request.isIndexData;
 
-			const auto copyBufferInfo = VkCopyBufferInfo2{ .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
-														   .pNext = nullptr,
-														   .srcBuffer = stagingBuffer.buffer,
-														   .dstBuffer = geometryIndexBuffer.buffer,
-														   .regionCount = 1,
-														   .pRegions = &region };
+			std::memcpy(stagingBufferPtr, (char*)request.memoryPtr + request.offeset, request.size);
+			vmaFlushAllocation(vulkanContext.allocator,
+							   isIndexData ? geometryIndexBuffer.allocation : geometryBuffer.allocation, 0,
+							   stagingBufferSize);
+			const auto region =
+				VkBufferCopy2{ .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+							   .pNext = nullptr,
+							   .srcOffset = 0,
+							   .dstOffset = isIndexData ? geometryIndexBufferFreeOffset : geometryBufferFreeOffset,
+							   .size = request.size };
+
+			const auto copyBufferInfo =
+				VkCopyBufferInfo2{ .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+								   .pNext = nullptr,
+								   .srcBuffer = stagingBuffer.buffer,
+								   .dstBuffer = isIndexData ? geometryIndexBuffer.buffer : geometryBuffer.buffer,
+								   .regionCount = 1,
+								   .pRegions = &region };
 
 			{
 				const auto beginInfo = VkCommandBufferBeginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -298,13 +434,31 @@ struct Scene
 			};
 			const auto result = vkQueueSubmit2(vulkanContext.transferQueue, 1, &submit, stagingBufferReuse);
 			assert(result == VK_SUCCESS);
-			geometryBufferFreeOffset += request.size;
+
+			if (isIndexData)
+			{
+				geometryIndexBufferFreeOffset += request.size;
+			}
+			else
+			{
+				geometryBufferFreeOffset += request.size;
+			}
 		}
+
+		return StaticMesh{ .indicesOffset = 0,
+						   .verticesOffset = 0,
+						   .vertexCount =
+							   static_cast<uint32_t>(meshData.indexStream.size() / 4) }; // 32 bit index for now
 	}
 
 	static constexpr VkDeviceSize stagingBufferSize{ 1 * 1024 * 1024 };
 	GraphicsBuffer stagingBuffer{};
 	VkFence stagingBufferReuse;
+	void* stagingBufferPtr{ nullptr };
+
+	VkDescriptorPool geometryDescriptorPool;
+	VkDescriptorSet geometryDescriptorSet;
+	VkDescriptorSetLayout geomtryDescriptorSetLayout;
 
 
 	VkCommandPool commandPool;
@@ -365,6 +519,7 @@ void Framework::Application::Run()
 	{
 		const auto instanceLayers = std::array{ "VK_LAYER_KHRONOS_validation" };
 		instanceExtensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+		instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
 		const auto applicationInfo = VkApplicationInfo{ .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 														.pNext = nullptr,
@@ -763,7 +918,11 @@ void Framework::Application::Run()
 				.format = vulkanContext.swapchainImageFormat,
 				.components = VkComponentMapping{ VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
 												  VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY },
-				.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+				.subresourceRange = VkImageSubresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+															 .baseMipLevel = 0,
+															 .levelCount = 1,
+															 .baseArrayLayer = 0,
+															 .layerCount = 1 }
 			};
 			const auto result = vkCreateImageView(vulkanContext.device, &imageViewCreateInfo, nullptr,
 												  &vulkanContext.swapchainImageViews[i]);
@@ -1362,6 +1521,10 @@ void main()
 	// wait until all submitted work is finished
 	{
 		const auto result = vkQueueWaitIdle(vulkanContext.graphicsQueue);
+		assert(result == VK_SUCCESS);
+	}
+	{
+		const auto result = vkQueueWaitIdle(vulkanContext.transferQueue);
 		assert(result == VK_SUCCESS);
 	}
 
