@@ -77,11 +77,51 @@ struct VulkanContext
 		const auto result = vkSetDebugUtilsObjectNameEXT(device, &nameInfo);
 		assert(result == VK_SUCCESS);
 	}
+
+	VkShaderModule shaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path)
+	{
+		assert(std::filesystem::exists(path));
+		auto stream = std::ifstream{ path, std::ios::ate };
+
+		auto size = stream.tellg();
+		auto shader = std::string(size, '\0'); // construct string to stream size
+		stream.seekg(0);
+		stream.read(&shader[0], size);
+
+		const auto shaderInfo = Utils::ShaderInfo{ "main", {}, stage, Utils::GlslShaderCode{ shader } };
+
+		Utils::ShaderByteCode code;
+		const auto compilationResult = Utils::CompileToSpirv(shaderInfo, code);
+		assert(compilationResult == Utils::CompilationResult::Success);
+
+		const auto shaderCreateInfo = VkShaderModuleCreateInfo{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+																.pNext = nullptr,
+																.flags = 0,
+																.codeSize = code.size() * 4,
+																.pCode = code.data() };
+
+		VkShaderModule shaderModule;
+		const auto result = vkCreateShaderModule(device, &shaderCreateInfo, nullptr, &shaderModule);
+		assert(result == VK_SUCCESS);
+
+		return shaderModule;
+	}
+};
+
+struct BasicGeometryPassResources
+{
+	VkPipeline pipeline;
+	VkPipelineLayout pipelineLayout;
+	
+	void ReleaseResources(VkDevice device)
+	{
+		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+		vkDestroyPipeline(device, pipeline, nullptr);
+	}
 };
 
 struct FullscreenQuadPassResources
 {
-
 	VkPipeline pipeline;
 	VkPipelineLayout pipelineLayout;
 
@@ -138,14 +178,16 @@ struct Scene
 			const auto descriptorSetLayoutCreateInfo =
 				VkDescriptorSetLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 												 .pNext = nullptr,
-												 .flags = 0, //VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT,
+												 .flags =
+													 0, // VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT,
 												 .bindingCount = bindings.size(),
 												 .pBindings = bindings.data() };
 
 			const auto result = vkCreateDescriptorSetLayout(vulkanContext.device, &descriptorSetLayoutCreateInfo,
 															nullptr, &geomtryDescriptorSetLayout);
 			assert(result == VK_SUCCESS);
-			vulkanContext.setObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, (uint64_t)geomtryDescriptorSetLayout, "geometryDSLayout");
+			vulkanContext.setObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, (uint64_t)geomtryDescriptorSetLayout,
+											 "geometryDSLayout");
 		}
 
 		/*{
@@ -184,7 +226,8 @@ struct Scene
 											 .pSetLayouts = &geomtryDescriptorSetLayout };
 			const auto result = vkAllocateDescriptorSets(vulkanContext.device, &allocationInfo, &geometryDescriptorSet);
 			assert(result == VK_SUCCESS);
-			vulkanContext.setObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET, (uint64_t)geometryDescriptorSet, "geometryDS");
+			vulkanContext.setObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET, (uint64_t)geometryDescriptorSet,
+											 "geometryDS");
 		}
 		{
 			const auto poolCreateInfo =
@@ -321,6 +364,11 @@ struct Scene
 		vmaDestroyBuffer(vulkanContext.allocator, stagingBuffer.buffer, stagingBuffer.allocation);
 		vmaDestroyBuffer(vulkanContext.allocator, geometryBuffer.buffer, geometryBuffer.allocation);
 		vmaDestroyBuffer(vulkanContext.allocator, geometryIndexBuffer.buffer, geometryIndexBuffer.allocation);
+
+		vkDestroyDescriptorSetLayout(vulkanContext.device, geomtryDescriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(vulkanContext.device, geometryDescriptorPool, nullptr);
+
+		vkDestroyCommandPool(vulkanContext.device, commandPool, nullptr);
 	}
 
 	StaticMesh Upload(const std::string_view mesh, const VulkanContext& vulkanContext)
@@ -329,7 +377,7 @@ struct Scene
 
 		const auto importSettings =
 			Framework::MeshImportSettings{ .verticesStreamDeclarations = { Framework::VerticesStreamDeclaration{
-											   .hasPosition = true, .hasNormal = true } } };
+											   .hasPosition = true, .hasTextureCoordinate0 = true } } };
 		const auto meshData = importer.ImportMesh(0, importSettings);
 
 		struct DataUploadRegion
@@ -692,11 +740,16 @@ void Framework::Application::Run()
 		physicalDeviceFeatures13.pNext = nullptr;
 		physicalDeviceFeatures13.synchronization2 = VK_TRUE;
 		physicalDeviceFeatures13.dynamicRendering = VK_TRUE;
+		
+		auto physicalDeviceFeatures12 = VkPhysicalDeviceVulkan12Features{};
+		physicalDeviceFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+		physicalDeviceFeatures12.pNext = &physicalDeviceFeatures13;
+		physicalDeviceFeatures12.scalarBlockLayout = VK_TRUE;
 
 
 		const auto deviceCreateInfo =
 			VkDeviceCreateInfo{ .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-								.pNext = &physicalDeviceFeatures13,
+								.pNext = &physicalDeviceFeatures12,
 								.flags = 0,
 								.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
 								.pQueueCreateInfos = queueCreateInfos.data(),
@@ -850,7 +903,7 @@ void Framework::Application::Run()
 									  .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 									  .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
 									  .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-									  .presentMode = VK_PRESENT_MODE_FIFO_KHR,
+									  .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR,// VK_PRESENT_MODE_FIFO_KHR,
 									  .clipped = VK_FALSE,
 									  .oldSwapchain = VK_NULL_HANDLE };
 
@@ -980,7 +1033,176 @@ void Framework::Application::Run()
 	}
 #pragma endregion
 
+#pragma region Scene preparation
+	auto scene = Scene{};
+	scene.CreateResources(vulkanContext);
+	const auto myStaticMesh = scene.Upload("Assets/Meshes/bunny.obj", vulkanContext);
+#pragma endregion
+
+
 #pragma region Geometry pass initialization
+	BasicGeometryPassResources basicGeometryPassResources;
+
+	{
+		const auto pushConstantRange =
+			VkPushConstantRange{ .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(float) };
+
+		const auto setLayouts = std::array{ scene.geomtryDescriptorSetLayout };
+
+		const auto pipelineLayoutCreateInfo =
+			VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+										.pNext = nullptr,
+										.flags = 0,
+										.setLayoutCount = static_cast<uint32_t>(setLayouts.size()),
+										.pSetLayouts = setLayouts.data(),
+										.pushConstantRangeCount = 1,
+										.pPushConstantRanges = &pushConstantRange };
+		const auto result = vkCreatePipelineLayout(vulkanContext.device, &pipelineLayoutCreateInfo, nullptr,
+												   &basicGeometryPassResources.pipelineLayout);
+		assert(result == VK_SUCCESS);
+	}
+
+	{
+		VkShaderModule fragmentShaderModule =
+			vulkanContext.shaderModuleFromFile(Utils::ShaderStage::Fragment, "Assets/Shaders/BasicGeometry.frag");
+		VkShaderModule vertexShaderModule =
+			vulkanContext.shaderModuleFromFile(Utils::ShaderStage::Vertex, "Assets/Shaders/BasicGeometry.vert");
+
+		const auto shaderStages =
+			std::array{ VkPipelineShaderStageCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+														 .pNext = nullptr,
+														 .flags = 0,
+														 .stage = VK_SHADER_STAGE_VERTEX_BIT,
+														 .module = vertexShaderModule,
+														 .pName = "main",
+														 .pSpecializationInfo = nullptr },
+						VkPipelineShaderStageCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+														 .pNext = nullptr,
+														 .flags = 0,
+														 .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+														 .module = fragmentShaderModule,
+														 .pName = "main",
+														 .pSpecializationInfo = nullptr } };
+
+
+		const auto pipelineRendering =
+			VkPipelineRenderingCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+										   .pNext = nullptr,
+										   .viewMask = 0,
+										   .colorAttachmentCount = 1,
+										   .pColorAttachmentFormats = &vulkanContext.swapchainImageFormat,
+										   .depthAttachmentFormat = VK_FORMAT_UNDEFINED,
+										   .stencilAttachmentFormat = VK_FORMAT_UNDEFINED };
+
+
+		const auto vertexInputState =
+			VkPipelineVertexInputStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+												  .pNext = nullptr,
+												  .flags = 0,
+												  .vertexBindingDescriptionCount = 0,
+												  .pVertexBindingDescriptions = nullptr,
+												  .vertexAttributeDescriptionCount = 0,
+												  .pVertexAttributeDescriptions = nullptr };
+
+		const auto inputAssemblyState =
+			VkPipelineInputAssemblyStateCreateInfo{ .sType =
+														VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+													.pNext = nullptr,
+													.flags = 0,
+													.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+													.primitiveRestartEnable = VK_FALSE };
+
+		const auto viewportState =
+			VkPipelineViewportStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+											   .pNext = nullptr,
+											   .viewportCount = 1,
+											   .pViewports = nullptr, // we will use dynamic state
+											   .scissorCount = 1,
+											   .pScissors = nullptr }; // we will use dynamic state
+
+		const auto rasterizationState =
+			VkPipelineRasterizationStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+													.pNext = nullptr,
+													.flags = 0,
+													.depthClampEnable = VK_FALSE,
+													.rasterizerDiscardEnable = VK_FALSE,
+													.polygonMode = VK_POLYGON_MODE_FILL,
+													.cullMode = VK_CULL_MODE_BACK_BIT,
+													.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+													.depthBiasEnable = VK_FALSE,
+													.lineWidth = 1.0f };
+
+		const auto multisampleState =
+			VkPipelineMultisampleStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+												  .pNext = nullptr,
+												  .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+												  .sampleShadingEnable = VK_FALSE,
+												  .alphaToCoverageEnable = VK_FALSE };
+
+		const auto depthStencilState =
+			VkPipelineDepthStencilStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+												   .pNext = nullptr,
+												   .flags = 0,
+												   .depthTestEnable = VK_FALSE,
+												   .depthWriteEnable = VK_FALSE,
+												   .depthBoundsTestEnable = VK_FALSE,
+												   .stencilTestEnable = VK_FALSE };
+
+		const auto blendAttachment =
+			VkPipelineColorBlendAttachmentState{ .blendEnable = VK_TRUE,
+												 .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+												 .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+												 .colorBlendOp = VK_BLEND_OP_ADD,
+												 .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+												 .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+												 .alphaBlendOp = VK_BLEND_OP_ADD,
+												 .colorWriteMask = VK_COLOR_COMPONENT_A_BIT | VK_COLOR_COMPONENT_B_BIT |
+													 VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT };
+
+		const auto blendState =
+			VkPipelineColorBlendStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+												 .pNext = nullptr,
+												 .flags = 0,
+												 //.logicOpEnable = VK_FALSE,
+												 .attachmentCount = 1,
+												 .pAttachments = &blendAttachment };
+
+		const auto dynamicStates = std::array{ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+		const auto dynamicState =
+			VkPipelineDynamicStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+											  .pNext = nullptr,
+											  .flags = 0,
+											  .dynamicStateCount = dynamicStates.size(),
+											  .pDynamicStates = dynamicStates.data() };
+
+		const auto pipelineCreateInfo =
+			VkGraphicsPipelineCreateInfo{ .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+										  .pNext = &pipelineRendering,
+										  .flags = 0,
+										  .stageCount = shaderStages.size(),
+										  .pStages = shaderStages.data(),
+										  .pVertexInputState = &vertexInputState,
+										  .pInputAssemblyState = &inputAssemblyState,
+										  .pTessellationState = nullptr,
+										  .pViewportState = &viewportState,
+										  .pRasterizationState = &rasterizationState,
+										  .pMultisampleState = &multisampleState,
+										  .pDepthStencilState = &depthStencilState,
+										  .pColorBlendState = &blendState,
+										  .pDynamicState = &dynamicState,
+										  .layout = basicGeometryPassResources.pipelineLayout,
+										  .renderPass = VK_NULL_HANDLE,
+										  .subpass = 0 };
+
+		const auto result = vkCreateGraphicsPipelines(vulkanContext.device, VK_NULL_HANDLE, 1, &pipelineCreateInfo,
+													  nullptr, &basicGeometryPassResources.pipeline);
+		assert(result == VK_SUCCESS);
+
+		vkDestroyShaderModule(vulkanContext.device, vertexShaderModule, nullptr);
+		vkDestroyShaderModule(vulkanContext.device, fragmentShaderModule, nullptr);
+	}
+
+
 	FullscreenQuadPassResources fullscreenQuadPassResources;
 
 	{
@@ -1047,36 +1269,8 @@ void main()
 			assert(result == VK_SUCCESS);
 		}
 
-		VkShaderModule fragmentShaderModule;
-		{
-			const auto fragmentShaderFile = std::filesystem::path("Assets/Shaders/ShaderToySample.frag");
-			assert(std::filesystem::exists(fragmentShaderFile));
-			auto stream = std::ifstream{ fragmentShaderFile, std::ios::ate };
-
-			auto size = stream.tellg();
-			auto shader = std::string(size, '\0'); // construct string to stream size
-			stream.seekg(0);
-			stream.read(&shader[0], size);
-
-			const auto shaderInfo =
-				Utils::ShaderInfo{ "main", {}, Utils::ShaderStage::Fragment, Utils::GlslShaderCode{ shader } };
-
-			Utils::ShaderByteCode code;
-			const auto compilationResult = Utils::CompileToSpirv(shaderInfo, code);
-			assert(compilationResult == Utils::CompilationResult::Success);
-
-			const auto fragmentShaderCreateInfo =
-				VkShaderModuleCreateInfo{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-										  .pNext = nullptr,
-										  .flags = 0,
-										  .codeSize = code.size() * 4,
-										  .pCode = code.data() };
-
-			const auto result =
-				vkCreateShaderModule(vulkanContext.device, &fragmentShaderCreateInfo, nullptr, &fragmentShaderModule);
-			assert(result == VK_SUCCESS);
-		}
-
+		VkShaderModule fragmentShaderModule =
+			vulkanContext.shaderModuleFromFile(Utils::ShaderStage::Fragment, "Assets/Shaders/ShaderToySample.frag");
 
 		const auto shaderStages =
 			std::array{ VkPipelineShaderStageCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -1270,12 +1464,6 @@ void main()
 	ImGui_ImplSDL3_InitForVulkan(window);
 #pragma endregion
 
-#pragma region Scene preparation
-	auto scene = Scene{};
-	scene.CreateResources(vulkanContext);
-	scene.Upload("Assets/Meshes/bunny.obj", vulkanContext);
-#pragma endregion
-
 	bool shouldRun = true;
 	auto frameIndex = uint32_t{ 0 };
 
@@ -1409,16 +1597,32 @@ void main()
 													.pStencilAttachment = nullptr };
 		vkCmdBeginRendering(cmd, &renderingInfo);
 
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fullscreenQuadPassResources.pipeline);
-		const auto viewport = VkViewport{ 0.0f, 0.0f, 1920.0f, 1080.0f, 0.0f, 1.0f };
-		vkCmdSetViewport(cmd, 0, 1, &viewport);
-		const auto scissor = VkRect2D{ { 0, 0 }, { 1920, 1080 } };
-		vkCmdSetScissor(cmd, 0, 1, &scissor);
-		static float time = 0.0f;
-		time += 0.01f;
-		vkCmdPushConstants(cmd, fullscreenQuadPassResources.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-						   sizeof(float), &time);
-		vkCmdDraw(cmd, 3, 1, 0, 0);
+		{
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fullscreenQuadPassResources.pipeline);
+			const auto viewport = VkViewport{ 0.0f, 0.0f, 1920.0f, 1080.0f, 0.0f, 1.0f };
+			vkCmdSetViewport(cmd, 0, 1, &viewport);
+			const auto scissor = VkRect2D{ { 0, 0 }, { 1920, 1080 } };
+			vkCmdSetScissor(cmd, 0, 1, &scissor);
+			static float time = 0.0f;
+			time += ImGui::GetIO().DeltaTime;
+			vkCmdPushConstants(cmd, fullscreenQuadPassResources.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+							   sizeof(float), &time);
+			vkCmdDraw(cmd, 3, 1, 0, 0);
+		}
+		{
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicGeometryPassResources.pipeline);
+			const auto viewport = VkViewport{ 0.0f, 0.0f, 1920.0f, 1080.0f, 0.0f, 1.0f };
+			vkCmdSetViewport(cmd, 0, 1, &viewport);
+			const auto scissor = VkRect2D{ { 0, 0 }, { 1920, 1080 } };
+			vkCmdSetScissor(cmd, 0, 1, &scissor);
+			static float time = 0.0f;
+			time += ImGui::GetIO().DeltaTime;
+			vkCmdPushConstants(cmd, basicGeometryPassResources.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+							   sizeof(float), &time);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicGeometryPassResources.pipelineLayout, 0, 1, &scene.geometryDescriptorSet, 0, nullptr);
+			vkCmdDraw(cmd, myStaticMesh.vertexCount, 1, 0, 0);
+		}
+
 		ImGui_ImplVulkan_RenderDrawData(drawData, cmd);
 		vkCmdEndRendering(cmd);
 
@@ -1557,6 +1761,8 @@ void main()
 
 		SDL_Vulkan_DestroySurface(vulkanContext.instance, vulkanContext.surface, nullptr);
 
+		imGuiPassResources.ReleaseResources(vulkanContext.device);
+		basicGeometryPassResources.ReleaseResources(vulkanContext.device);
 		fullscreenQuadPassResources.ReleaseResources(vulkanContext.device);
 
 		vkDestroyDevice(vulkanContext.device, nullptr);

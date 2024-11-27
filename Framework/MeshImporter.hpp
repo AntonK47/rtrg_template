@@ -71,6 +71,9 @@ namespace Framework
 		AssetImporter(const std::filesystem::path& filePath);
 		~AssetImporter();
 
+		AssetImporter(const AssetImporter&) = delete;
+		AssetImporter(AssetImporter&&) = delete;
+
 		MeshData ImportMesh(uint32_t meshIndex, const MeshImportSettings& meshImportSettings);
 
 		const SceneInformation& getSceneInformation() const
