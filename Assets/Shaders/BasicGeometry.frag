@@ -3,6 +3,7 @@
 
 layout(location = 0) out vec4 outputColor;
 layout(location = 0) in vec2 uv;
+layout(location = 1 ) in vec3 normal;
 
 layout(push_constant) uniform SomeValues { float time; } values;
 
@@ -395,5 +396,13 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord ){
 
 void main()
 {
-	mainImage(outputColor, /*gl_FragCoord.xy*/ uv * iResolution);
+    vec3 lightDirection = vec3(1.0f,1.0f,0.0f);
+    vec3 n = normalize(normal);
+    float a = max(0, dot(lightDirection, n));
+    vec3 ambient = vec3(0.3f, 0.1f, 0.1f);
+
+    vec4 generatedBunnyTexture;
+	mainImage(generatedBunnyTexture, /*gl_FragCoord.xy*/ uv * iResolution);
+
+    outputColor = vec4(generatedBunnyTexture.xyz * a + ambient, 1.0f);
 }
