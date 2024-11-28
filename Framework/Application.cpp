@@ -28,6 +28,10 @@
 
 #include "MeshImporter.hpp"
 
+#define GLM_FORCE_LEFT_HANDED
+#include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
+
 struct PerFrameResource
 {
 	VkSemaphore readyToPresent;
@@ -112,7 +116,7 @@ struct BasicGeometryPassResources
 {
 	VkPipeline pipeline;
 	VkPipelineLayout pipelineLayout;
-	
+
 	void ReleaseResources(VkDevice device)
 	{
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -154,6 +158,22 @@ struct StaticMesh
 	uint32_t indicesOffset;
 	uint32_t verticesOffset;
 	uint32_t vertexCount;
+};
+
+struct ConstantsData
+{
+	glm::mat4 viewProjection;
+	glm::mat4 model;
+};
+
+struct Camera
+{
+	glm::vec3 position;
+	glm::vec3 forward;
+	glm::vec3 up;
+	float movementSpeed{ 1.0f };
+	float movementSpeedScale{ 1.0f };
+	float sensitivity{ 1.0f };
 };
 
 struct Scene
@@ -740,7 +760,7 @@ void Framework::Application::Run()
 		physicalDeviceFeatures13.pNext = nullptr;
 		physicalDeviceFeatures13.synchronization2 = VK_TRUE;
 		physicalDeviceFeatures13.dynamicRendering = VK_TRUE;
-		
+
 		auto physicalDeviceFeatures12 = VkPhysicalDeviceVulkan12Features{};
 		physicalDeviceFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 		physicalDeviceFeatures12.pNext = &physicalDeviceFeatures13;
@@ -903,7 +923,7 @@ void Framework::Application::Run()
 									  .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 									  .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
 									  .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-									  .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR,// VK_PRESENT_MODE_FIFO_KHR,
+									  .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR, // VK_PRESENT_MODE_FIFO_KHR,
 									  .clipped = VK_FALSE,
 									  .oldSwapchain = VK_NULL_HANDLE };
 
@@ -1039,13 +1059,26 @@ void Framework::Application::Run()
 	const auto myStaticMesh = scene.Upload("Assets/Meshes/bunny.obj", vulkanContext);
 #pragma endregion
 
+#pragma region Setup Camera
+	auto camera = Camera{ .position = glm::vec3{ 0.0f, 0.0f, 0.0f },
+						  .forward = glm::vec3{ 0.0f, 0.0f, 1.0f },
+						  .up = glm::vec3{ 0.0f, 1.0f, 0.0f },
+						  .movementSpeed = 0.01f,
+						  .sensitivity = 0.2f };
+
+	auto moveCameraFaster = false;
+	const auto fastSpeed = 25.0f;
+#pragma endregion
+
 
 #pragma region Geometry pass initialization
 	BasicGeometryPassResources basicGeometryPassResources;
 
 	{
-		const auto pushConstantRange =
-			VkPushConstantRange{ .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(float) };
+		const auto pushConstants = std::array{
+			VkPushConstantRange{ .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(float) },
+			VkPushConstantRange{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 32, .size = sizeof(ConstantsData) }
+		};
 
 		const auto setLayouts = std::array{ scene.geomtryDescriptorSetLayout };
 
@@ -1055,8 +1088,8 @@ void Framework::Application::Run()
 										.flags = 0,
 										.setLayoutCount = static_cast<uint32_t>(setLayouts.size()),
 										.pSetLayouts = setLayouts.data(),
-										.pushConstantRangeCount = 1,
-										.pPushConstantRanges = &pushConstantRange };
+										.pushConstantRangeCount = static_cast<uint32_t>(pushConstants.size()),
+										.pPushConstantRanges = pushConstants.data() };
 		const auto result = vkCreatePipelineLayout(vulkanContext.device, &pipelineLayoutCreateInfo, nullptr,
 												   &basicGeometryPassResources.pipelineLayout);
 		assert(result == VK_SUCCESS);
@@ -1223,51 +1256,9 @@ void Framework::Application::Run()
 	}
 
 	{
-		VkShaderModule vertexShaderModule;
-		{
-			const auto shader =
-				R"(#version 460
-
-const vec3 triangle[] =
-{
-	vec3(1.0,3.0,0.0),
-	vec3(1.0,-1.0,0.0),
-	vec3(-3.0,-1.0,0.0)
-};
-
-const vec2 uvs[] =
-{
-	vec2(1.0,-1.0),
-	vec2(1.0,1.0),
-	vec2(-1.0,1.0)
-};
-
-layout(location = 0 ) out vec2 uv;
-
-void main()
-{
-	uv = uvs[gl_VertexIndex].xy;
-	gl_Position = vec4(triangle[gl_VertexIndex], 1.0);
-})";
-
-			const auto shaderInfo =
-				Utils::ShaderInfo{ "main", {}, Utils::ShaderStage::Vertex, Utils::GlslShaderCode{ shader } };
-
-			Utils::ShaderByteCode code;
-			const auto compilationResult = Utils::CompileToSpirv(shaderInfo, code);
-			assert(compilationResult == Utils::CompilationResult::Success);
-
-			const auto vertexShaderCreateInfo =
-				VkShaderModuleCreateInfo{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-										  .pNext = nullptr,
-										  .flags = 0,
-										  .codeSize = code.size() * 4,
-										  .pCode = code.data() };
-
-			const auto result =
-				vkCreateShaderModule(vulkanContext.device, &vertexShaderCreateInfo, nullptr, &vertexShaderModule);
-			assert(result == VK_SUCCESS);
-		}
+		VkShaderModule vertexShaderModule =
+			vulkanContext.shaderModuleFromFile(Utils::ShaderStage::Vertex, "Assets/Shaders/FullscreenQuad.vert");
+		;
 
 		VkShaderModule fragmentShaderModule =
 			vulkanContext.shaderModuleFromFile(Utils::ShaderStage::Fragment, "Assets/Shaders/ShaderToySample.frag");
@@ -1486,6 +1477,55 @@ void main()
 		ImGui_ImplSDL3_NewFrame();
 
 		ImGui::NewFrame();
+
+#pragma region Camera Controller
+
+		if (ImGui::IsKeyDown(ImGuiKey_W))
+		{
+			camera.position += camera.forward * camera.movementSpeed * (moveCameraFaster ? fastSpeed : 1.0f) *
+				io.DeltaTime * camera.movementSpeedScale;
+		}
+		if (ImGui::IsKeyDown(ImGuiKey_S))
+		{
+			camera.position -= camera.forward * camera.movementSpeed * (moveCameraFaster ? fastSpeed : 1.0f) *
+				io.DeltaTime * camera.movementSpeedScale;
+		}
+		if (ImGui::IsKeyDown(ImGuiKey_A))
+		{
+			camera.position += glm::normalize(glm::cross(camera.forward, camera.up)) * camera.movementSpeed *
+				io.DeltaTime * (moveCameraFaster ? fastSpeed : 1.0f) * camera.movementSpeedScale;
+		}
+		if (ImGui::IsKeyDown(ImGuiKey_D))
+		{
+			camera.position -= glm::normalize(glm::cross(camera.forward, camera.up)) * camera.movementSpeed *
+				io.DeltaTime * (moveCameraFaster ? fastSpeed : 1.0f) * camera.movementSpeedScale;
+		}
+
+		if (ImGui::IsMouseDown(ImGuiMouseButton_Left) and not io.WantCaptureMouse)
+		{
+			auto delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
+			ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+
+			const auto right = glm::normalize(cross(camera.forward, camera.up));
+			const auto up = glm::normalize(cross(right, camera.forward));
+
+			const auto f = glm::normalize(camera.forward + right * delta.y + up * delta.x);
+
+			auto rotationAxis = glm::normalize(glm::cross(f, camera.forward));
+
+			if (glm::length(rotationAxis) >= 0.1f)
+			{
+				const auto rotation =
+					glm::rotate(glm::identity<glm::mat4>(),
+								glm::radians(glm::length(glm::vec2(delta.x, delta.y)) * camera.sensitivity), f);
+
+				camera.forward = glm::normalize(glm::vec3(rotation * glm::vec4(camera.forward, 0.0f)));
+			}
+		}
+
+#pragma endregion
+
+
 		static bool show_demo_window = true;
 		ImGui::ShowDemoWindow(&show_demo_window);
 		ImGui::Render();
@@ -1597,6 +1637,13 @@ void main()
 													.pStencilAttachment = nullptr };
 		vkCmdBeginRendering(cmd, &renderingInfo);
 
+		ConstantsData constantsData = ConstantsData{};
+		constantsData.model = glm::scale(glm::identity<glm::mat4>(), glm::vec3{ 0.01f });
+		constantsData.model = glm::translate(constantsData.model, glm::vec3{ 0.0f, 0.0f, 10.0f });
+		const auto aspectRatio = static_cast<float>(1920.0f) / static_cast<float>(1080.0f);
+		const auto projection = glm::perspective(glm::radians(60.0f), aspectRatio, 0.001f, 100.0f);
+		const auto view = glm::lookAt(camera.position, camera.position + camera.forward, camera.up);
+		constantsData.viewProjection = projection * view;
 		{
 			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fullscreenQuadPassResources.pipeline);
 			const auto viewport = VkViewport{ 0.0f, 0.0f, 1920.0f, 1080.0f, 0.0f, 1.0f };
@@ -1619,7 +1666,10 @@ void main()
 			time += ImGui::GetIO().DeltaTime;
 			vkCmdPushConstants(cmd, basicGeometryPassResources.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
 							   sizeof(float), &time);
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicGeometryPassResources.pipelineLayout, 0, 1, &scene.geometryDescriptorSet, 0, nullptr);
+			vkCmdPushConstants(cmd, basicGeometryPassResources.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 32,
+							   sizeof(ConstantsData), &constantsData);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicGeometryPassResources.pipelineLayout, 0,
+									1, &scene.geometryDescriptorSet, 0, nullptr);
 			vkCmdDraw(cmd, myStaticMesh.vertexCount, 1, 0, 0);
 		}
 

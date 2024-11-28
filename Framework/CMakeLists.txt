@@ -3,6 +3,7 @@ find_package(volk CONFIG REQUIRED)
 find_package(VulkanHeaders CONFIG)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
+find_package(glm CONFIG REQUIRED)
 
 set(FRAMEWORK_NAME TemplateFramework)
 
@@ -33,5 +34,6 @@ PRIVATE
 	imgui::imgui
 	assimp::assimp
 	GPUOpen::VulkanMemoryAllocator
+	glm::glm-header-only
 )
 
