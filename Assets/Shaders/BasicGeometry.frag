@@ -5,10 +5,10 @@ layout(location = 0) out vec4 outputColor;
 layout(location = 0) in vec2 uv;
 layout(location = 1 ) in vec3 normal;
 
-layout(push_constant) uniform SomeValues { float time; } values;
+layout(push_constant) uniform SomeValues { float time; float resolution[2]; } values;
 
 #define iTime values.time
-const vec2 iResolution = vec2(1920.0f, 1080.0f);
+#define iResolution vec2(values.resolution[0], values.resolution[1])
 const vec2 iMouse = vec2(0.0f, 0.0f);
 /*
 

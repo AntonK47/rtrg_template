@@ -12,7 +12,7 @@ TEST(AssetImporter, LoadMissingFile)
 	auto unitTest = testing::UnitTest::GetInstance();
 
 	AssetImporter importer{ std::filesystem::path(unitTest->original_working_dir()) / "no_exist.obj" };
-	EXPECT_FALSE(importer.hasLoadedScene());
+	EXPECT_FALSE(importer.HasLoadedScene());
 }
 
 TEST(AssetImporter, LoadExistingFile)
@@ -20,7 +20,7 @@ TEST(AssetImporter, LoadExistingFile)
 	auto unitTest = testing::UnitTest::GetInstance();
 
 	AssetImporter importer{ std::filesystem::path(unitTest->original_working_dir()) / "bunny.obj" };
-	EXPECT_TRUE(importer.hasLoadedScene());
+	EXPECT_TRUE(importer.HasLoadedScene());
 }
 
 TEST(AssetImporter, SceneLoading)
@@ -28,7 +28,7 @@ TEST(AssetImporter, SceneLoading)
 	auto unitTest = testing::UnitTest::GetInstance();
 
 	AssetImporter importer{ std::filesystem::path(unitTest->original_working_dir()) / "bunny.obj" };
-	const auto& sceneInformation = importer.getSceneInformation();
+	const auto& sceneInformation = importer.GetSceneInformation();
 	EXPECT_EQ(sceneInformation.meshCount, 1);
 }
 

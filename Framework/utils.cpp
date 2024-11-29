@@ -99,12 +99,12 @@ Utils::CompilationResult Utils::CompileToSpirv(const ShaderInfo& info, ShaderByt
 	// TODO: this options should be pass from the user land
 	auto options = glslang_spv_options_t{ .generate_debug_info = true,
 										  .strip_debug_info = false,
-										  .disable_optimizer = true,
+										  .disable_optimizer = false,
 										  .optimize_size = false,
-										  .disassemble = true,
+										  .disassemble = false,
 										  .validate = true,
 										  .emit_nonsemantic_shader_debug_info = false,
-										  .emit_nonsemantic_shader_debug_source = false };
+										  .emit_nonsemantic_shader_debug_source = true };
 
 	// BUG: createModule function results a validation error
 	[[maybe_unused]] auto optionsOptimized = glslang_spv_options_t{ .generate_debug_info = false,

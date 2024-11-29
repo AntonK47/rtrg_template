@@ -76,12 +76,12 @@ namespace Framework
 
 		MeshData ImportMesh(uint32_t meshIndex, const MeshImportSettings& meshImportSettings);
 
-		const SceneInformation& getSceneInformation() const
+		const SceneInformation& GetSceneInformation() const
 		{
 			return sceneInformation;
 		}
 
-		bool hasLoadedScene() const
+		bool HasLoadedScene() const
 		{
 			return currentlyLoadedScene != nullptr;
 		}
