@@ -101,6 +101,22 @@ namespace Framework
 			}
 		}
 
+		inline LocalPose BlendPose(const LocalPose& pose0, const LocalPose& pose1, Float blendFactor)
+		{
+			assert(pose0.data.size() == pose1.data.size());
+
+			auto finalPose = LocalPose{};
+			finalPose.data.resize(pose0.data.size());
+
+			for (auto i = 0; i < pose0.data.size(); i++)
+			{
+				finalPose.data[i].rotation = Math::Slerp(pose0.data[i].rotation, pose1.data[i].rotation, blendFactor);
+				finalPose.data[i].translation =
+					Math::Mix(pose0.data[i].translation, pose1.data[i].translation, blendFactor);
+			}
+			return finalPose;
+		}
+
 		inline LocalPose SamplePose(const AnimationDataSet& animationDataSet, const AnimationData& data, Float time)
 		{
 			auto pose = LocalPose{}; // normally this should be allocated outside of the function call
