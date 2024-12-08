@@ -4,6 +4,7 @@ find_package(VulkanHeaders CONFIG)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(SDL3 CONFIG REQUIRED)
 
 set(FRAMEWORK_NAME TemplateFramework)
 
@@ -33,7 +34,7 @@ PRIVATE
 	glslang::glslang-default-resource-limits
 	volk::volk_headers
 	Vulkan::Headers
-	SDL3::SDL3-static
+	SDL3::SDL3
 	imgui::imgui
 	assimp::assimp
 	GPUOpen::VulkanMemoryAllocator

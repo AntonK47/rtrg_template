@@ -1,27 +1,22 @@
 include(FetchContent)
 
-set(SDL_STATIC TRUE)
+#set(SDL_STATIC TRUE)
 
-FetchContent_Declare(
-    SDL
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG main
-    GIT_SHALLOW TRUE
-    GIT_PROGRESS TRUE
-)
-message(STATUS "Using SDL3 via FetchContent")
-FetchContent_MakeAvailable(SDL)
-set_property(TARGET SDL3-shared SDL3-static SDL3_test SDL_uclibc uninstall PROPERTY FOLDER "thirdParty/sdl3")
-
-
-
-
-
+#FetchContent_Declare(
+#    SDL
+#    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+#    GIT_TAG main
+#    GIT_SHALLOW TRUE
+#    GIT_PROGRESS TRUE
+#)
+#message(STATUS "Using SDL3 via FetchContent")
+#FetchContent_MakeAvailable(SDL)
+#set_property(TARGET SDL3-shared SDL3-static SDL3_test SDL_uclibc uninstall PROPERTY FOLDER "thirdParty/sdl3")
 
 
 find_package(volk CONFIG REQUIRED)
 find_package(VulkanHeaders CONFIG)
-
+find_package(SDL3 CONFIG REQUIRED)
 
 FetchContent_Declare(imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -47,7 +42,7 @@ target_link_libraries(
 PRIVATE
     volk::volk_headers
 	Vulkan::Headers
-    SDL3::SDL3-static
+    SDL3::SDL3
 )
 
 target_compile_definitions(imgui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK)

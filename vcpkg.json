@@ -7,7 +7,11 @@
     "volk",
     "vulkan-headers",
     "vulkan-memory-allocator",
-    "assimp"
+    "assimp",
+    {
+      "name": "sdl3",
+      "features": [ "vulkan" ]
+    }
   ],
-  "builtin-baseline": "13c226fc46306fa6090db14317a7786099274a3a"
+  "builtin-baseline": "20a72ce99b12dd0ebfea5d39f32681bd68b19d03"
 }
