@@ -19,6 +19,9 @@ PRIVATE
 	Application.cpp
 	MeshImporter.hpp
 	MeshImporter.cpp
+	Animation.hpp
+	Math.hpp
+	Core.hpp
 )
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)

@@ -4,11 +4,30 @@
 #include <assimp/scene.h>
 
 #include <filesystem>
+#include <string>
+#include <vector>
+
+#include "Animation.hpp"
+
+
 namespace Framework
 {
+
+	enum class MeshType
+	{
+		fixed,
+		dynamic,
+		skinned
+	};
+
+	struct MeshInfo
+	{
+		bool isSkinned{ false };
+	};
+
 	struct SceneInformation
 	{
-		uint32_t meshCount{};
+		U32 meshCount{};
 	};
 
 	struct VerticesStreamDeclaration
@@ -19,7 +38,7 @@ namespace Framework
 		bool hasTextureCoordinate0{ false };
 		bool hasTextureCoordinate1{ false };
 		bool hasColor{ false };
-		// TODO: add animation related declarations
+		bool hasJointsIndexAndWeights{ false };
 		// Optional: Stream compression
 	};
 
@@ -36,16 +55,18 @@ namespace Framework
 		normal,
 		tangentAndBitangent,
 		textureCoordinate0,
-		textureCoordinate1
+		textureCoordinate1,
+		jointIndex,
+		jointWeight
 	};
 
 	struct AttributeDescriptor
 	{
-		AttributeSemantic semantic{AttributeSemantic::position};
-		uint32_t offset{0};
-		uint32_t stride{12};
-		uint8_t componentSize{12};
-		uint8_t componentCount{3};
+		AttributeSemantic semantic{ AttributeSemantic::position };
+		U32 offset{ 0 };
+		U32 stride{ 12 };
+		U8 componentSize{ 12 };
+		U8 componentCount{ 3 };
 	};
 
 	struct VerticesStreamDescriptor
@@ -74,7 +95,9 @@ namespace Framework
 		AssetImporter(const AssetImporter&) = delete;
 		AssetImporter(AssetImporter&&) = delete;
 
-		MeshData ImportMesh(uint32_t meshIndex, const MeshImportSettings& meshImportSettings);
+		MeshData ImportMesh(U32 meshIndex, const MeshImportSettings& meshImportSettings);
+		Animation::Skeleton ImportSkeleton(U32 meshIndex);
+		Animation::AnimationDataSet LoadAllAnimations(const Animation::Skeleton& skeleton, const int resampleRate);
 
 		const SceneInformation& GetSceneInformation() const
 		{
@@ -87,7 +110,7 @@ namespace Framework
 		}
 
 	private:
-		const aiScene* currentlyLoadedScene{nullptr};
+		const aiScene* currentlyLoadedScene{ nullptr };
 		SceneInformation sceneInformation{};
 		Assimp::Importer importer;
 	};

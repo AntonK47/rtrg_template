@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <queue>
+#include <tuple>
 #include <vector>
 
 #define VOLK_IMPLEMENTATION
@@ -28,15 +29,17 @@
 
 #include "MeshImporter.hpp"
 
-#define GLM_FORCE_LEFT_HANDED
-#include "glm/glm.hpp"
-#include "glm/gtc/matrix_transform.hpp"
+#include "Math.hpp"
+#include "Animation.hpp"
+
+using namespace Framework;
+using namespace Framework::Animation;
 
 struct WindowViewport
 {
 	uint32_t width{ 0 };
 	uint32_t height{ 0 };
-	bool shouldRecreateWindowSizeDependetResources{ false };
+	bool shouldRecreateWindowSizeDependedResources{ false };
 
 	bool IsVisible() const
 	{
@@ -48,7 +51,7 @@ struct WindowViewport
 		width = 0;
 		height = 0;
 
-		shouldRecreateWindowSizeDependetResources = true;
+		shouldRecreateWindowSizeDependedResources = true;
 	}
 
 	void UpdateSize(SDL_Window* window)
@@ -61,7 +64,7 @@ struct WindowViewport
 
 		if (static_cast<uint32_t>(w) != width or static_cast<uint32_t>(h) != height)
 		{
-			shouldRecreateWindowSizeDependetResources = true;
+			shouldRecreateWindowSizeDependedResources = true;
 		}
 
 		width = static_cast<uint32_t>(w);
@@ -84,6 +87,15 @@ struct PerFrameResource
 
 	VkCommandBuffer commandBuffer;
 	VkCommandPool commandPool;
+};
+
+using DebugColor = std::array<float, 4>;
+
+struct DebugColorPalette
+{
+	static constexpr DebugColor Red = { 0.8f, 0.2f, 0.2f, 1.0f };
+	static constexpr DebugColor Green = { 0.2f, 0.8f, 0.2f, 1.0f };
+	static constexpr DebugColor Blue = { 0.2f, 0.2f, 0.8f, 1.0f };
 };
 
 struct VulkanContext
@@ -123,6 +135,21 @@ struct VulkanContext
 										   .pObjectName = name };
 		const auto result = vkSetDebugUtilsObjectNameEXT(device, &nameInfo);
 		assert(result == VK_SUCCESS);
+	}
+
+	void BeginDebugLableName(VkCommandBuffer cmd, const char* name, DebugColor color) const
+	{
+		const auto labelInfo = VkDebugUtilsLabelEXT{ .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+													 .pNext = nullptr,
+													 .pLabelName = name,
+													 .color = { color[0], color[1], color[2], color[3] } };
+
+		vkCmdBeginDebugUtilsLabelEXT(cmd, &labelInfo);
+	}
+
+	void EndDebugLableName(VkCommandBuffer cmd) const
+	{
+		vkCmdEndDebugUtilsLabelEXT(cmd);
 	}
 
 	VkShaderModule ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path) const
@@ -242,7 +269,7 @@ struct VulkanContext
 									  .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 									  .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
 									  .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-									  .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR, // VK_PRESENT_MODE_FIFO_KHR,
+									  .presentMode = VK_PRESENT_MODE_FIFO_KHR, //VK_PRESENT_MODE_IMMEDIATE_KHR, 
 									  .clipped = VK_FALSE,
 									  .oldSwapchain = VK_NULL_HANDLE };
 
@@ -317,6 +344,30 @@ struct Camera
 	float movementSpeedScale{ 1.0f };
 	float sensitivity{ 1.0f };
 };
+
+using ViewportSize = glm::vec2;
+
+std::tuple<glm::vec2, bool> GetScreenSpacePosition(const ViewportSize& viewport, const glm::mat4& modelView,
+												   const glm::mat4& projection, const glm::vec3& positionWS)
+{
+	const auto positionViewSpace = modelView * glm::vec4{ positionWS, 1.0f };
+	bool isVisible = true;
+	if (positionViewSpace.z < 0.0f)
+	{
+		isVisible = false;
+	}
+
+	const auto positionClipSpace = projection * positionViewSpace;
+	const auto positionNDC =
+		glm::vec3{ positionClipSpace.x / positionClipSpace.w, positionClipSpace.y / positionClipSpace.w,
+				   positionClipSpace.z / positionClipSpace.w };
+
+
+	const auto screenPosition =
+		glm::vec2{ (positionNDC.x + 1.0f) * 0.5f * viewport.x, (positionNDC.y + 1.0f) * 0.5f * viewport.y };
+
+	return std::make_tuple(screenPosition, isVisible);
+}
 
 struct Scene
 {
@@ -537,11 +588,23 @@ struct Scene
 	{
 		auto importer = Framework::AssetImporter(std::filesystem::path{ mesh });
 
+		/*{
+			const auto importSettings = Framework::MeshImportSettings{
+				.verticesStreamDeclarations = { Framework::VerticesStreamDeclaration{
+					.hasPosition = true, .hasNormal = true, .hasTextureCoordinate0 = true } }
+			};
+			const auto meshData = importer.ImportMesh(2, importSettings);
+		}*/
+
 		const auto importSettings = Framework::MeshImportSettings{
 			.verticesStreamDeclarations = { Framework::VerticesStreamDeclaration{
 				.hasPosition = true, .hasNormal = true, .hasTextureCoordinate0 = true } }
 		};
-		const auto meshData = importer.ImportMesh(0, importSettings);
+		const auto meshData = importer.ImportMesh(2, importSettings);
+		const auto a = importer.ImportSkeleton(2);
+		skeletons.push_back(a);
+		animationDataSet = importer.LoadAllAnimations(a, 60);
+
 
 		struct DataUploadRegion
 		{
@@ -680,6 +743,8 @@ struct Scene
 	GraphicsBuffer geometryIndexBuffer{};
 	uint32_t geometryIndexBufferFreeOffset{ 0 };
 	std::vector<StaticMesh> meshes;
+	std::vector<Skeleton> skeletons;
+	AnimationDataSet animationDataSet;
 };
 
 
@@ -736,6 +801,8 @@ struct BasicGeometryPass
 		ConstantsData constantsData = ConstantsData{};
 		constantsData.model = glm::scale(glm::identity<glm::mat4>(), glm::vec3{ 0.01f });
 		constantsData.model = glm::translate(constantsData.model, glm::vec3{ 0.0f, 0.0f, 10.0f });
+		const auto flip = glm::rotate(glm::identity<glm::mat4>(), glm::radians(90.0f), glm::vec3{ 1.0f, 0.0f, 0.0f });
+		constantsData.model = flip * constantsData.model;
 		const auto aspectRatio = static_cast<float>(windowViewport.width) / static_cast<float>(windowViewport.height);
 		const auto projection = glm::perspective(glm::radians(60.0f), aspectRatio, 0.001f, 100.0f);
 		const auto view = glm::lookAt(camera.position, camera.position + camera.forward, camera.up);
@@ -755,7 +822,8 @@ struct BasicGeometryPass
 			ShaderToyConstant constants = { time, static_cast<float>(windowViewport.width),
 											static_cast<float>(windowViewport.height) };
 
-			vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ShaderToyConstant), &constants);
+			vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ShaderToyConstant),
+							   &constants);
 			vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 32, sizeof(ConstantsData),
 							   &constantsData);
 			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
@@ -1003,7 +1071,6 @@ struct BasicGeometryPass
 		vkDestroyPipeline(vulkanContext.device, pipeline, nullptr);
 	}
 };
-
 struct FullscreenQuadPass
 {
 	VkPipeline pipeline;
@@ -1497,7 +1564,7 @@ void Framework::Application::Run()
 
 	WindowViewport windowViewport{};
 	windowViewport.UpdateSize(window);
-	windowViewport.shouldRecreateWindowSizeDependetResources = false;
+	windowViewport.shouldRecreateWindowSizeDependedResources = false;
 
 #pragma region Swapchain creation
 	{
@@ -1603,7 +1670,12 @@ void Framework::Application::Run()
 #pragma region Scene preparation
 	auto scene = Scene{};
 	scene.CreateResources(vulkanContext);
-	const auto myStaticMesh = scene.Upload("Assets/Meshes/bunny.obj", vulkanContext);
+	const auto myStaticMesh =
+		scene.Upload("Assets/Meshes/makarov-pm-fps-animations/source/Arms_Mak.fbx", vulkanContext);
+	// scene.Upload("Assets/Meshes/CesiumMan.glb", vulkanContext);
+	/*const auto myStaticMesh = scene.Upload("Assets/Meshes/bunny.obj", vulkanContext);*/
+
+
 #pragma endregion
 
 #pragma region Setup Camera
@@ -1669,6 +1741,15 @@ void Framework::Application::Run()
 
 	bool shouldRun = true;
 	auto frameIndex = uint32_t{ 0 };
+	static std::vector<AnimationInstance> animationInstances;
+
+	for (auto i = 0; i < scene.animationDataSet.animations.size(); i++)
+	{
+		const auto& animation = scene.animationDataSet.animations[i];
+		animationInstances.push_back(AnimationInstance{
+			.data = scene.animationDataSet.animations[i], .playbackRate = 1.00f, .startTime = 0.0f, .loop = true });
+	}
+
 
 	while (shouldRun)
 	{
@@ -1682,7 +1763,8 @@ void Framework::Application::Run()
 				shouldRun = false;
 				break;
 			}
-			if (event.type == SDL_EVENT_WINDOW_RESIZED or event.type == SDL_EVENT_WINDOW_MAXIMIZED or event.type == SDL_EVENT_WINDOW_SHOWN or event.type == SDL_EVENT_WINDOW_RESTORED)
+			if (event.type == SDL_EVENT_WINDOW_RESIZED or event.type == SDL_EVENT_WINDOW_MAXIMIZED or
+				event.type == SDL_EVENT_WINDOW_SHOWN or event.type == SDL_EVENT_WINDOW_RESTORED)
 			{
 				windowViewport.UpdateSize(window);
 			}
@@ -1700,7 +1782,7 @@ void Framework::Application::Run()
 
 #pragma region Recreate frame Dependent resources
 
-		if (windowViewport.shouldRecreateWindowSizeDependetResources)
+		if (windowViewport.shouldRecreateWindowSizeDependedResources)
 		{
 			{
 				const auto result = vkQueueWaitIdle(vulkanContext.graphicsQueue);
@@ -1708,7 +1790,7 @@ void Framework::Application::Run()
 			}
 			vulkanContext.RecreateSwapchain(windowViewport);
 			basicGeometryPass.RecreateViewDependentResources(vulkanContext, windowViewport);
-			windowViewport.shouldRecreateWindowSizeDependetResources = false;
+			windowViewport.shouldRecreateWindowSizeDependedResources = false;
 		}
 
 #pragma endregion
@@ -1766,10 +1848,110 @@ void Framework::Application::Run()
 		}
 
 #pragma endregion
-
+		static float time = 0.0f;
 
 		static bool show_demo_window = true;
 		ImGui::ShowDemoWindow(&show_demo_window);
+
+		static float animationTime = 0.0f;
+		static bool useGlobalTimeInAnimation = true;
+		static int selectedAnimation = 0;
+
+		ImGui::Begin("Animations");
+		if (ImGui::BeginListBox("##listbox 2", ImVec2(-FLT_MIN, 5 * ImGui::GetTextLineHeightWithSpacing())))
+		{
+			for (int n = 0; n < animationInstances.size(); n++)
+			{
+				bool is_selected = (selectedAnimation == n);
+				ImGuiSelectableFlags flags = (selectedAnimation == n) ? ImGuiSelectableFlags_Highlight : 0;
+				if (ImGui::Selectable(animationInstances[n].data.animationName.c_str(), is_selected, flags))
+				{
+					selectedAnimation = n;
+				}
+
+				// Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+				if (is_selected)
+					ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndListBox();
+		}
+		for (auto i = 0; i < animationInstances.size(); i++)
+		{
+		}
+
+		ImGui::End();
+		const auto& pose = SamplePose(scene.animationDataSet, animationInstances[selectedAnimation],
+								  useGlobalTimeInAnimation ? time : animationTime);
+
+		const auto& jointMatrices = ComputeJointsMatrices(pose, scene.skeletons[0]);
+
+		auto model = glm::scale(glm::identity<glm::mat4>(), glm::vec3{ 0.01f });
+		model = glm::translate(model, glm::vec3{ 0.0f, 0.0f, 10.0f });
+		const auto flip = glm::rotate(glm::identity<glm::mat4>(), glm::radians(90.0f), glm::vec3{ 1.0f, 0.0f, 0.0f });
+		model = flip * model;
+		const auto aspectRatio = static_cast<float>(windowViewport.width) / static_cast<float>(windowViewport.height);
+		const auto projection = glm::perspective(glm::radians(60.0f), aspectRatio, 0.001f, 100.0f);
+		const auto view = glm::lookAt(camera.position, camera.position + camera.forward, camera.up);
+
+
+		/*const auto [meshOriginPositionScreenSpace, isVisible] =
+			GetScreenSpacePosition(glm::vec2{ windowViewport.width, windowViewport.height }, view * model, projection,
+								   glm::vec3{ 0.0f, 0.0f, 0.0f });*/
+
+		auto& drawList = *ImGui::GetBackgroundDrawList();
+		drawList.PushClipRectFullScreen();
+		const auto debugDrawColor = IM_COL32(100, 100, 250, 255);
+
+		/*if (isVisible)
+		{
+			auto p = ImVec2{ meshOriginPositionScreenSpace.x, meshOriginPositionScreenSpace.y };
+			drawList.AddCircleFilled(p, 4.0f, debugDrawColor);
+			drawList.AddText(ImVec2{ p.x - 40.0f, p.y + 16.0f }, debugDrawColor, "mesh");
+		}*/
+
+
+		const auto& skeleton = scene.skeletons.front();
+
+
+		for (auto i = 0; i < skeleton.joints.size(); i++)
+		{
+			auto& joint = skeleton.joints[i];
+
+			if (joint.parentIndex >= 0)
+			{
+
+				// const auto p0 =
+				//	glm::vec3{ glm::inverse(skeleton.joints[joint.parentIndex].inverseBindPose)[3] } * glm::vec3{ 1.0,
+				//-1.0f, 1.0f }; const auto p1 = glm::vec3{ glm::inverse(joint.inverseBindPose)[3] } * glm::vec3{ 1.0,
+				// -1.0f, 1.0f };
+
+				/*const auto p0 =
+					glm::vec3{ skeleton.joints[joint.parentIndex].inverseBindPose[3] } * glm::vec3{ 1.0, -1.0f, 1.0f };
+				const auto p1 = glm::vec3{ joint.inverseBindPose[3] } * glm::vec3{ 1.0, -1.0f, 1.0f };*/
+
+				const auto p0 = glm::vec3{ jointMatrices[i][3] } * glm::vec3{ 1.0, -1.0f, 1.0f };
+				const auto p1 = glm::vec3{ jointMatrices[joint.parentIndex][3] } * glm::vec3{ 1.0, -1.0f, 1.0f };
+				const auto origin = glm::vec3{ 0.0f, 0.0f, 0.0f };
+
+				const auto [p0screen, p0IsVisible] =
+					GetScreenSpacePosition(glm::vec2{ windowViewport.width, windowViewport.height },
+										   view * model * jointMatrices[i], projection, origin);
+
+				const auto [p1screen, p1IsVisible] =
+					GetScreenSpacePosition(glm::vec2{ windowViewport.width, windowViewport.height },
+										   view * model * jointMatrices[joint.parentIndex], projection, origin);
+
+				if (p0IsVisible and p1IsVisible)
+				{
+					drawList.AddLine(ImVec2{ p0screen.x, p0screen.y }, ImVec2{ p1screen.x, p1screen.y }, debugDrawColor,
+									 3.0f);
+					drawList.AddText(ImVec2{ p1screen.x - 40.0f, p1screen.y + 16.0f }, debugDrawColor,
+									 joint.name.c_str());
+				}
+			}
+		}
+
+		drawList.PopClipRect();
 		ImGui::Render();
 		ImDrawData* drawData = ImGui::GetDrawData();
 
@@ -1878,8 +2060,9 @@ void Framework::Application::Run()
 							 .pColorAttachments = &colorAttachment,
 							 .pDepthAttachment = nullptr,
 							 .pStencilAttachment = nullptr };
-		vkCmdBeginRendering(cmd, &renderingInfo);
 
+		vulkanContext.BeginDebugLableName(cmd, "Background Rendering", DebugColorPalette::Red);
+		vkCmdBeginRendering(cmd, &renderingInfo);
 		{
 			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fullscreenQuadPass.pipeline);
 			const auto viewport = VkViewport{
@@ -1889,7 +2072,7 @@ void Framework::Application::Run()
 			vkCmdSetViewport(cmd, 0, 1, &viewport);
 			const auto scissor = VkRect2D{ { 0, 0 }, { windowViewport.width, windowViewport.height } };
 			vkCmdSetScissor(cmd, 0, 1, &scissor);
-			static float time = 0.0f;
+
 			time += ImGui::GetIO().DeltaTime;
 
 
@@ -1902,13 +2085,19 @@ void Framework::Application::Run()
 			vkCmdDraw(cmd, 3, 1, 0, 0);
 		}
 		vkCmdEndRendering(cmd);
+		vulkanContext.EndDebugLableName(cmd);
+		vulkanContext.BeginDebugLableName(cmd, "Mesh Rendering", DebugColorPalette::Green);
 
 		basicGeometryPass.Execute(cmd, vulkanContext.swapchainImageViews[imageIndex], scene, camera, windowViewport,
 								  { myStaticMesh });
 
+		vulkanContext.EndDebugLableName(cmd);
+
+		vulkanContext.BeginDebugLableName(cmd, "GUI Rendering", DebugColorPalette::Blue);
 		vkCmdBeginRendering(cmd, &renderingInfo);
 		ImGui_ImplVulkan_RenderDrawData(drawData, cmd);
 		vkCmdEndRendering(cmd);
+		vulkanContext.EndDebugLableName(cmd);
 
 #pragma endregion
 

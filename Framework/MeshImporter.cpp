@@ -3,8 +3,14 @@
 #include <assimp/cimport.h>
 #include <assimp/postprocess.h>
 #include <cassert>
+#include <queue>
+#include <set>
+#include <unordered_map>
 
-Framework::AssetImporter::AssetImporter(const std::filesystem::path& filePath)
+using namespace Framework;
+using namespace Framework::Animation;
+
+AssetImporter::AssetImporter(const std::filesystem::path& filePath)
 {
 
 	auto scene = importer.ReadFile(filePath.generic_string(), 0);
@@ -18,13 +24,12 @@ Framework::AssetImporter::AssetImporter(const std::filesystem::path& filePath)
 	sceneInformation.meshCount = scene->mNumMeshes;
 }
 
-Framework::AssetImporter::~AssetImporter()
+AssetImporter::~AssetImporter()
 {
 	importer.FreeScene();
 }
 
-Framework::MeshData Framework::AssetImporter::ImportMesh(uint32_t meshIndex,
-														 const MeshImportSettings& meshImportSettings)
+MeshData AssetImporter::ImportMesh(U32 meshIndex, const MeshImportSettings& meshImportSettings)
 {
 	assert(meshIndex < currentlyLoadedScene->mNumMeshes);
 	assert(currentlyLoadedScene->mMeshes[meshIndex]->HasPositions());
@@ -32,6 +37,7 @@ Framework::MeshData Framework::AssetImporter::ImportMesh(uint32_t meshIndex,
 	bool shouldLoadTangentData = false;
 	bool shouldLoadTextureCoordinate0 = false;
 	bool shouldLoadTextureCoordinate1 = false;
+	bool shouldLoadJointsIndexAndWeight = false;
 
 	for (const auto& streamDeclaration : meshImportSettings.verticesStreamDeclarations)
 	{
@@ -39,6 +45,7 @@ Framework::MeshData Framework::AssetImporter::ImportMesh(uint32_t meshIndex,
 		shouldLoadTangentData |= streamDeclaration.hasTangentBitangent;
 		shouldLoadTextureCoordinate0 |= streamDeclaration.hasTextureCoordinate0;
 		shouldLoadTextureCoordinate1 |= streamDeclaration.hasTextureCoordinate1;
+		shouldLoadJointsIndexAndWeight |= streamDeclaration.hasJointsIndexAndWeights;
 	}
 
 	unsigned int flags = aiProcess_Triangulate;
@@ -63,6 +70,11 @@ Framework::MeshData Framework::AssetImporter::ImportMesh(uint32_t meshIndex,
 
 	const auto& mesh = *currentlyLoadedScene->mMeshes[meshIndex];
 
+	if (shouldLoadJointsIndexAndWeight)
+	{
+		assert(mesh.HasBones()); // TODO:
+	}
+
 	auto meshData = MeshData{};
 	meshData.streams.reserve(meshImportSettings.verticesStreamDeclarations.size());
 
@@ -75,6 +87,8 @@ Framework::MeshData Framework::AssetImporter::ImportMesh(uint32_t meshIndex,
 		auto tangentBitangentOffset = uint32_t{ 0 };
 		auto textureCoordinate0Offset = uint32_t{ 0 };
 		auto textureCoordinate1Offset = uint32_t{ 0 };
+		auto jointsIndexOffset = uint32_t{ 0 };
+		auto jointsWeightOffset = uint32_t{ 0 };
 		if (streamDeclaration.hasPosition)
 		{
 			positionOffset = totalVertexSize;
@@ -124,6 +138,22 @@ Framework::MeshData Framework::AssetImporter::ImportMesh(uint32_t meshIndex,
 									 .componentCount = 2 });
 		}
 
+		if (streamDeclaration.hasJointsIndexAndWeights)
+		{
+			jointsIndexOffset = totalVertexSize;
+			totalVertexSize += sizeof(uint32_t);
+			streamDescriptor.attributes.push_back(AttributeDescriptor{ .semantic = AttributeSemantic::jointIndex,
+																	   .offset = jointsIndexOffset,
+																	   .componentSize = sizeof(uint8_t),
+																	   .componentCount = 4 });
+			jointsWeightOffset = totalVertexSize;
+			totalVertexSize += sizeof(float) * 4;
+			streamDescriptor.attributes.push_back(AttributeDescriptor{ .semantic = AttributeSemantic::jointWeight,
+																	   .offset = jointsWeightOffset,
+																	   .componentSize = sizeof(float),
+																	   .componentCount = 4 });
+		}
+
 		for (auto i = 0; i < streamDescriptor.attributes.size(); i++)
 		{
 			streamDescriptor.attributes[i].stride = totalVertexSize;
@@ -159,10 +189,20 @@ Framework::MeshData Framework::AssetImporter::ImportMesh(uint32_t meshIndex,
 		}
 		if (streamDeclaration.hasTextureCoordinate0)
 		{
+			const auto t = mesh.HasTextureCoords(0);
 			for (auto i = 0; i < mesh.mNumVertices; i++)
 			{
-				std::memcpy(&data[i * totalVertexSize + textureCoordinate0Offset], &mesh.mTextureCoords[0][i],
-							sizeof(aiVector2D));
+				if (t)
+				{
+
+					std::memcpy(&data[i * totalVertexSize + textureCoordinate0Offset], &mesh.mTextureCoords[0][i],
+								sizeof(aiVector2D));
+				}
+				else
+				{
+					auto m = aiVector2D{ 0.0f, 0.0f };
+					std::memcpy(&data[i * totalVertexSize + textureCoordinate0Offset], &m, sizeof(aiVector2D));
+				}
 			}
 		}
 		if (streamDeclaration.hasTextureCoordinate1)
@@ -170,6 +210,14 @@ Framework::MeshData Framework::AssetImporter::ImportMesh(uint32_t meshIndex,
 			for (auto i = 0; i < mesh.mNumVertices; i++)
 			{
 				std::memcpy(&data[i * totalVertexSize + textureCoordinate1Offset], &mesh.mTextureCoords[1][i],
+							sizeof(aiVector2D));
+			}
+		}
+		if (streamDeclaration.hasJointsIndexAndWeights)
+		{
+			for (auto i = 0; i < mesh.mNumVertices; i++)
+			{
+				std::memcpy(&data[i * totalVertexSize + jointsIndexOffset], &mesh.mTextureCoords[1][i],
 							sizeof(aiVector2D));
 			}
 		}
@@ -188,4 +236,289 @@ Framework::MeshData Framework::AssetImporter::ImportMesh(uint32_t meshIndex,
 		}
 	}
 	return meshData;
+}
+
+Skeleton AssetImporter::ImportSkeleton(U32 meshIndex)
+{
+	assert(meshIndex < currentlyLoadedScene->mNumMeshes);
+
+	currentlyLoadedScene = importer.ApplyPostProcessing(aiProcess_PopulateArmatureData);
+	const auto& mesh = currentlyLoadedScene->mMeshes[meshIndex];
+
+	assert(mesh->HasBones());
+
+	auto animationRoot = mesh->mBones[0]->mArmature;
+
+	while (animationRoot->mParent->mParent != nullptr)
+	{
+		animationRoot = animationRoot->mParent;
+	}
+	auto skeleton = Skeleton{};
+	{
+		std::queue<aiNode*> children;
+		children.push(animationRoot);
+		auto totalJoints = 0;
+		while (!children.empty())
+		{
+			auto node = children.front();
+			children.pop();
+
+			for (auto i = 0; i < node->mNumChildren; i++)
+			{
+				children.push(node->mChildren[i]);
+			}
+			totalJoints++;
+		}
+	}
+
+	std::unordered_set<std::string> animatedBondes;
+	for (auto i = 0; i < mesh->mNumBones; i++)
+	{
+		auto bone = mesh->mBones[i]->mNode;
+		animatedBondes.insert(std::string{ bone->mName.C_Str() });
+
+		while (bone->mParent->mParent != nullptr)
+		{
+			bone = bone->mParent;
+			animatedBondes.insert(std::string{ bone->mName.C_Str() });
+		}
+	}
+
+	struct Node
+	{
+		aiNode* node;
+		int32_t parentIndex;
+	};
+	std::queue<Node> children;
+	children.push({ animationRoot, -1 });
+
+	while (!children.empty())
+	{
+		auto [node, parentIndex] = children.front();
+		children.pop();
+
+		if (not animatedBondes.contains(std::string{ node->mName.C_Str() }))
+		{
+			continue;
+		}
+
+		auto index = (int32_t)skeleton.joints.size();
+		skeleton.joints.push_back(Joint{
+			glm::transpose(glm::mat4{ node->mTransformation.a1, node->mTransformation.a2, node->mTransformation.a3,
+									  node->mTransformation.a4, node->mTransformation.b1, node->mTransformation.b2,
+									  node->mTransformation.b3, node->mTransformation.b4, node->mTransformation.c1,
+									  node->mTransformation.c2, node->mTransformation.c3, node->mTransformation.c4,
+									  node->mTransformation.d1, node->mTransformation.d2, node->mTransformation.d3,
+									  node->mTransformation.d4 }),
+			parentIndex, node->mName.C_Str() });
+
+
+		for (auto i = 0; i < node->mNumChildren; i++)
+		{
+
+			children.push({ node->mChildren[i], index });
+		}
+	}
+
+	return skeleton;
+}
+
+AnimationDataSet AssetImporter::LoadAllAnimations(const Skeleton& skeleton, const int resampleRate)
+{
+	std::vector<JointAnimationData> animationDatabase;
+	std::vector<AnimationData> animationDataResult;
+	std::unordered_map<std::string, int> skeletonJointNameToOffsetMap;
+	for (auto i = 0; i < skeleton.joints.size(); i++)
+	{
+		skeletonJointNameToOffsetMap.insert(std::make_pair(skeleton.joints[i].name, i));
+	}
+
+	for (auto i = 0; i < currentlyLoadedScene->mNumAnimations; i++)
+	{
+		auto& animation = *currentlyLoadedScene->mAnimations[i];
+
+
+		const auto durationInSeconds = animation.mDuration / animation.mTicksPerSecond;
+
+		const auto framesPerAnimation = (int)((resampleRate * durationInSeconds * 1001.0f) / 1000.0f);
+		const auto skeletonJointsCount = skeleton.joints.size();
+
+		// allocate
+		std::vector<JointAnimationData> animationData{};
+		animationData.resize(framesPerAnimation * skeletonJointsCount);
+		struct PositionSample
+		{
+			float time;
+			glm::vec3 position;
+		};
+
+		struct RotationSample
+		{
+			float time;
+			glm::quat rotation;
+		};
+		auto resamplePostion = [](const std::vector<PositionSample>& positionSamples,
+								  int targetFps) -> std::vector<glm::vec3>
+		{
+			assert(positionSamples.size() >= 2);
+
+			const auto start = 0.0f; // positionSamples.front().time;
+			const auto end = positionSamples.back().time;
+
+			const auto duration = end - start;
+			const auto timePerFrame = 1.0f / (float)targetFps;
+
+			const auto frames = std::max(1, (int)(((float)targetFps * duration * 1001.0f) / 1000.0f));
+
+
+			std::vector<glm::vec3> result;
+			result.resize(frames);
+
+			auto t = start;
+
+			result[0] = positionSamples.front().position;
+			result[frames - 1] = positionSamples.back().position;
+			int a = 0;
+			int b = 1;
+
+			for (int i = 1; i < frames - 1; i++)
+			{
+				t += timePerFrame;
+				while (positionSamples[a].time < t)
+				{
+					a++;
+				}
+				a--;
+				a = std::max(a, 0);
+				b = a + 1;
+				// assert(positionSamples[a].time < t && positionSamples[b].time >= t);
+				{
+					const float sa = positionSamples[a].time;
+					const float sb = positionSamples[b].time;
+					const float rest = t - sa;
+					const float factor = rest / (sb - sa);
+
+					const auto attribute1 = positionSamples[a].position;
+					const auto attribute2 = positionSamples[b].position;
+
+
+					result[i] = attribute1 * (1.0f - factor) + factor * attribute2;
+				}
+			}
+			return result;
+		};
+
+		auto resampleRotation = [](const std::vector<RotationSample>& rotationSamples,
+								   int targetFps) -> std::vector<glm::quat>
+		{
+			assert(rotationSamples.size() >= 2);
+
+			const auto start = 0.0f; // rotationSamples.front().time;
+			const auto end = rotationSamples.back().time;
+
+			const auto duration = end - start;
+			const auto timePerFrame = 1.0f / (float)targetFps;
+
+			const auto frames = std::max(1, (int)((targetFps * duration * 1001.0f) / 1000.0f));
+
+
+			std::vector<glm::quat> result;
+			result.resize(frames);
+
+			auto t = start;
+
+			result[0] = rotationSamples.front().rotation;
+			result[frames - 1] = rotationSamples.back().rotation;
+			int a = 0;
+			int b = 1;
+
+			for (int i = 1; i < frames - 1; i++)
+			{
+				t += timePerFrame;
+				while (rotationSamples[a].time < t)
+				{
+					a++;
+				}
+				a--;
+				a = std::max(a, 0);
+				b = a + 1;
+				// assert(rotationSamples[a].time < t && rotationSamples[b].time >= t);
+				{
+					const float sa = rotationSamples[a].time;
+					const float sb = rotationSamples[b].time;
+					const float rest = t - sa;
+					const float factor = rest / (sb - sa);
+
+					const auto attribute1 = rotationSamples[a].rotation;
+					const auto attribute2 = rotationSamples[b].rotation;
+
+
+					result[i] = glm::slerp(attribute1, attribute2, factor);
+				}
+			}
+			return result;
+		};
+		const auto seconds = animation.mDuration / animation.mTicksPerSecond;
+		for (auto channelIndex = 0; channelIndex < animation.mNumChannels; channelIndex++)
+		{
+			auto& channel = *animation.mChannels[channelIndex];
+			const auto channelNodeName = std::string{ channel.mNodeName.C_Str() };
+
+			if (skeletonJointNameToOffsetMap.contains(channelNodeName))
+			{
+				const auto offset = skeletonJointNameToOffsetMap[channelNodeName];
+
+				{
+					auto positionSamples = std::vector<PositionSample>{};
+					positionSamples.resize(channel.mNumPositionKeys);
+
+					for (auto t = 0; t < channel.mNumPositionKeys; t++)
+					{
+						positionSamples[t] = { (float)(channel.mPositionKeys[t].mTime / animation.mTicksPerSecond),
+											   glm::vec3{ channel.mPositionKeys[t].mValue.x,
+														  channel.mPositionKeys[t].mValue.y,
+														  channel.mPositionKeys[t].mValue.z } };
+					}
+
+					std::vector<glm::vec3> resampledPositions = resamplePostion(positionSamples, resampleRate);
+
+					for (auto i = 0; i < resampledPositions.size(); i++)
+					{
+						animationData[i * skeletonJointsCount + offset].translation = resampledPositions[i];
+					}
+				}
+				{
+					auto rotationSamples = std::vector<RotationSample>{};
+					rotationSamples.resize(channel.mNumRotationKeys);
+
+					for (auto t = 0; t < channel.mNumRotationKeys; t++)
+					{
+						rotationSamples[t] = { (float)(channel.mRotationKeys[t].mTime / animation.mTicksPerSecond),
+											   glm::quat{
+												   channel.mRotationKeys[t].mValue.w,
+												   channel.mRotationKeys[t].mValue.x,
+												   channel.mRotationKeys[t].mValue.y,
+												   channel.mRotationKeys[t].mValue.z,
+											   } };
+					}
+					std::vector<glm::quat> resampledRotations = resampleRotation(rotationSamples, resampleRate);
+
+					for (auto i = 0; i < resampledRotations.size(); i++)
+					{
+						animationData[i * skeletonJointsCount + offset].rotation = resampledRotations[i];
+					}
+				}
+			}
+		}
+
+		animationDataResult.push_back(
+			AnimationData{ .offset = static_cast<uint32_t>(animationDatabase.size()),
+						   .count = static_cast<uint32_t>(skeleton.joints.size()),
+						   .frames = static_cast<uint32_t>(framesPerAnimation),
+						   .duration = (float)(animation.mDuration / animation.mTicksPerSecond),
+						   .animationName = animation.mName.C_Str() });
+		animationDatabase.insert_range(animationDatabase.end(), animationData);
+	}
+
+	return AnimationDataSet{ animationDataResult, animationDatabase };
 }

@@ -388,7 +388,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord ){
 
 
     // Rough gamma correction, then present to the screen.
-	fragColor = vec4(sqrt(clamp(col, 0., 1.)), 1.);
+	fragColor = vec4(sqrt(clamp(col, 0., 1.))*0.2f, 1.);
 }
 
 
