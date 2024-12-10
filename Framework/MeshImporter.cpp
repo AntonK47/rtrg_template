@@ -144,8 +144,8 @@ MeshData AssetImporter::ImportMesh(U32 meshIndex, const MeshImportSettings& mesh
 			totalVertexSize += sizeof(uint32_t);
 			streamDescriptor.attributes.push_back(AttributeDescriptor{ .semantic = AttributeSemantic::jointIndex,
 																	   .offset = jointsIndexOffset,
-																	   .componentSize = sizeof(uint8_t),
-																	   .componentCount = 4 });
+																	   .componentSize = sizeof(uint32_t),
+																	   .componentCount = 1 });
 			jointsWeightOffset = totalVertexSize;
 			totalVertexSize += sizeof(float) * 4;
 			streamDescriptor.attributes.push_back(AttributeDescriptor{ .semantic = AttributeSemantic::jointWeight,
@@ -215,10 +215,66 @@ MeshData AssetImporter::ImportMesh(U32 meshIndex, const MeshImportSettings& mesh
 		}
 		if (streamDeclaration.hasJointsIndexAndWeights)
 		{
+			const auto skeleton = ImportSkeleton(meshIndex);
+			struct JointVertexData
+			{
+				int jointIndex;
+				float weight;
+			};
+			std::vector<std::vector<JointVertexData>> v;
+			v.resize(mesh.mNumVertices);
+
+			for (auto i = 0; i < mesh.mNumBones; i++)
+			{
+				auto& bone = *mesh.mBones[i];
+
+				auto it = std::find_if(skeleton.joints.begin(), skeleton.joints.end(), [&](const Joint& joint)
+									   { return joint.name == std::string{ bone.mName.C_Str() }; });
+				if (it == skeleton.joints.end())
+				{
+					continue;
+				}
+
+				const auto jointIndex = (int)std::distance(skeleton.joints.begin(), it);
+
+				for (auto j = 0; j < bone.mNumWeights; j++)
+				{
+					if (bone.mWeights[j].mWeight > 0.01)
+					{
+						v[bone.mWeights[j].mVertexId].push_back(
+							JointVertexData{ jointIndex, bone.mWeights[j].mWeight });
+					}
+				}
+			}
+
+			for (auto i = 0; i < v.size(); i++)
+			{
+				std::sort(v[i].begin(), v[i].end(),
+						  [](const JointVertexData& s1, const JointVertexData& s2) { return s1.weight > s2.weight; });
+			}
+			for (auto i = 0; i < v.size(); i++)
+			{
+				v[i].resize(4);
+				auto totalWeight = 0.0f;
+				for (auto j = 0; j < v[i].size(); j++)
+				{
+					totalWeight += v[i][j].weight;
+				}
+				for (auto j = 0; j < v[i].size(); j++)
+				{
+					v[i][j].weight /= totalWeight;
+				}
+			}
+
 			for (auto i = 0; i < mesh.mNumVertices; i++)
 			{
-				std::memcpy(&data[i * totalVertexSize + jointsIndexOffset], &mesh.mTextureCoords[1][i],
-							sizeof(aiVector2D));
+				const auto jointIndicies = glm::vec<4, uint8_t>{ v[i][0].jointIndex, v[i][1].jointIndex,
+																 v[i][2].jointIndex, v[i][3].jointIndex };
+				const auto jointWeights = glm::vec4{ v[i][0].weight, v[i][1].weight, v[i][2].weight, v[i][3].weight };
+
+				std::memcpy(&data[i * totalVertexSize + jointsIndexOffset], &jointIndicies,
+							sizeof(glm::vec<4, uint8_t>));
+				std::memcpy(&data[i * totalVertexSize + jointsWeightOffset], &jointWeights, sizeof(glm::vec4));
 			}
 		}
 
@@ -249,7 +305,7 @@ Skeleton AssetImporter::ImportSkeleton(U32 meshIndex)
 
 	auto animationRoot = mesh->mBones[0]->mArmature;
 
-	while (animationRoot->mParent->mParent != nullptr)
+	while (animationRoot->mParent != nullptr)
 	{
 		animationRoot = animationRoot->mParent;
 	}
@@ -270,6 +326,20 @@ Skeleton AssetImporter::ImportSkeleton(U32 meshIndex)
 			totalJoints++;
 		}
 	}
+
+	std::unordered_map<std::string, glm::mat4> boneMatrix;
+	for (auto i = 0; i < mesh->mNumBones; i++)
+	{
+		const auto matrix = glm::transpose(glm::mat4{
+			mesh->mBones[i]->mOffsetMatrix.a1, mesh->mBones[i]->mOffsetMatrix.a2, mesh->mBones[i]->mOffsetMatrix.a3,
+			mesh->mBones[i]->mOffsetMatrix.a4, mesh->mBones[i]->mOffsetMatrix.b1, mesh->mBones[i]->mOffsetMatrix.b2,
+			mesh->mBones[i]->mOffsetMatrix.b3, mesh->mBones[i]->mOffsetMatrix.b4, mesh->mBones[i]->mOffsetMatrix.c1,
+			mesh->mBones[i]->mOffsetMatrix.c2, mesh->mBones[i]->mOffsetMatrix.c3, mesh->mBones[i]->mOffsetMatrix.c4,
+			mesh->mBones[i]->mOffsetMatrix.d1, mesh->mBones[i]->mOffsetMatrix.d2, mesh->mBones[i]->mOffsetMatrix.d3,
+			mesh->mBones[i]->mOffsetMatrix.d4 });
+		boneMatrix[std::string{ mesh->mBones[i]->mName.C_Str() }] = matrix;
+	}
+
 
 	std::unordered_set<std::string> animatedBondes;
 	for (auto i = 0; i < mesh->mNumBones; i++)
@@ -296,21 +366,20 @@ Skeleton AssetImporter::ImportSkeleton(U32 meshIndex)
 	{
 		auto [node, parentIndex] = children.front();
 		children.pop();
-
-		if (not animatedBondes.contains(std::string{ node->mName.C_Str() }))
-		{
-			continue;
-		}
-
 		auto index = (int32_t)skeleton.joints.size();
-		skeleton.joints.push_back(Joint{
-			glm::transpose(glm::mat4{ node->mTransformation.a1, node->mTransformation.a2, node->mTransformation.a3,
-									  node->mTransformation.a4, node->mTransformation.b1, node->mTransformation.b2,
-									  node->mTransformation.b3, node->mTransformation.b4, node->mTransformation.c1,
-									  node->mTransformation.c2, node->mTransformation.c3, node->mTransformation.c4,
-									  node->mTransformation.d1, node->mTransformation.d2, node->mTransformation.d3,
-									  node->mTransformation.d4 }),
-			parentIndex, node->mName.C_Str() });
+		if (animatedBondes.contains(std::string{ node->mName.C_Str() }))
+		{
+			const auto inverseTransform = glm::inverse(glm::transpose(glm::mat4{
+				node->mTransformation.a1, node->mTransformation.a2, node->mTransformation.a3, node->mTransformation.a4,
+				node->mTransformation.b1, node->mTransformation.b2, node->mTransformation.b3, node->mTransformation.b4,
+				node->mTransformation.c1, node->mTransformation.c2, node->mTransformation.c3, node->mTransformation.c4,
+				node->mTransformation.d1, node->mTransformation.d2, node->mTransformation.d3,
+				node->mTransformation.d4 }));
+
+			
+			skeleton.joints.push_back(Joint{ boneMatrix[std::string{ node->mName.C_Str() }], inverseTransform,
+											 parentIndex, node->mName.C_Str() });
+		}
 
 
 		for (auto i = 0; i < node->mNumChildren; i++)
@@ -384,7 +453,7 @@ AnimationDataSet AssetImporter::LoadAllAnimations(const Skeleton& skeleton, cons
 			for (int i = 1; i < frames - 1; i++)
 			{
 				t += timePerFrame;
-				while (positionSamples[a].time < t)
+				while (positionSamples[a].time + timePerFrame< t)
 				{
 					a++;
 				}
@@ -435,7 +504,7 @@ AnimationDataSet AssetImporter::LoadAllAnimations(const Skeleton& skeleton, cons
 			for (int i = 1; i < frames - 1; i++)
 			{
 				t += timePerFrame;
-				while (rotationSamples[a].time < t)
+				while (rotationSamples[a].time + timePerFrame < t)
 				{
 					a++;
 				}

@@ -44,6 +44,7 @@ namespace Framework
 		struct Joint
 		{
 			Math::Matrix4x4 inverseBindPose;
+			Math::Matrix4x4 inverseTransform;
 			I32 parentIndex;
 			std::string name; // For debug only
 		};
@@ -97,7 +98,7 @@ namespace Framework
 
 			for (auto i = 1; i < jointsMatrices.size(); i++)
 			{
-				jointsMatrices[i] = jointsMatrices[skeleton.joints[i].parentIndex] * jointsMatrices[i];
+				jointsMatrices[i] = jointsMatrices[i] * skeleton.joints[i].inverseBindPose;
 			}
 		}
 

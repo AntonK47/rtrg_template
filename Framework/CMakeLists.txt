@@ -16,14 +16,18 @@ target_sources(
 PRIVATE 
 	Utils.cpp
     Utils.hpp
+	ImGuiUtils.hpp
+	VolkUtils.hpp
+	VolkUtils.cpp
+	VmaUtils.hpp
+	VmaUtils.cpp
 	Application.hpp
 	Application.cpp
 	MeshImporter.hpp
 	MeshImporter.cpp
 	Animation.hpp
 	Math.hpp
-	Core.hpp
-)
+	Core.hpp)
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)
 
