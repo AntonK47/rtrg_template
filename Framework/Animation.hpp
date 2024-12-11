@@ -123,16 +123,17 @@ namespace Framework
 			auto pose = LocalPose{}; // normally this should be allocated outside of the function call
 			pose.data.resize(data.count);
 
-			float fps = data.frames / data.duration;
-			float timePerFrame = data.duration / data.frames;
-			float index = time * fps;
+			Float fps = data.frames / data.duration;
+			Float timePerFrame = data.duration / data.frames;
+			Float index = time * fps;
 
 
 			const auto first = Math::Modulo(As<U32>(Math::Floor(index)), data.frames);
 			auto second = Math::Modulo(As<U32>(Math::Ceil(index)), data.frames);
 
-
-			float rest = time - first * timePerFrame;
+			Float t1 = first*timePerFrame;
+			Float t2 = second*timePerFrame;
+			Float rest = (time - t1)/(t2-t1);
 
 
 			if (first == second)

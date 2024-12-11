@@ -15,7 +15,7 @@ struct Vertex
 
 layout(scalar, set=0, binding=0) readonly buffer globalGeometryBufferBlock
 {
-	uint globalGeometryBuffer[];
+	Vertex globalGeometryBuffer[];
 };
 layout(scalar, set=0, binding=1) readonly buffer globalGeometryIndexBufferBlock
 {
@@ -48,7 +48,8 @@ layout(push_constant) uniform constantsBlock
 	mat4 model;
 } constants;
 
-Vertex decode(in uint vertexOffset)
+
+/*Vertex decode(in uint vertexOffset)
 {
 	vec4 v1 = unpackSnorm4x8(globalGeometryBuffer[vertexOffset]);
 	vec4 v2 = unpackSnorm4x8(globalGeometryBuffer[vertexOffset + 1]);
@@ -68,7 +69,7 @@ Vertex decode(in uint vertexOffset)
 	v.jointWeights = jointWeights;
 	return v;
 }
-
+*/
 void main()
 {
 	SubMesh subMesh = subMeshes[gl_InstanceIndex];
@@ -76,7 +77,9 @@ void main()
 	int index = globalGeometryIndexBuffer[gl_VertexIndex + int(subMesh.indexBase)];
 	uint vertexOffset = subMesh.vertexBase + subMesh.vertexStride * index;
 
-	Vertex vertex = decode(vertexOffset);
+	
+	Vertex vertex = globalGeometryBuffer[subMesh.vertexBase + index];
+	//Vertex vertex = decode(vertexOffset);
 
 	vec3 position = vertex.position;
 	uv = vertex.uv0;

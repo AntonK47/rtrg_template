@@ -429,7 +429,7 @@ AnimationDataSet AssetImporter::LoadAllAnimations(const Skeleton& skeleton, cons
 		auto resamplePostion = [](const std::vector<PositionSample>& positionSamples,
 								  int targetFps) -> std::vector<glm::vec3>
 		{
-			assert(positionSamples.size() >= 2);
+			assert(positionSamples.size() >= 1);
 
 			const auto start = 0.0f; // positionSamples.front().time;
 			const auto end = positionSamples.back().time;
@@ -480,7 +480,7 @@ AnimationDataSet AssetImporter::LoadAllAnimations(const Skeleton& skeleton, cons
 		auto resampleRotation = [](const std::vector<RotationSample>& rotationSamples,
 								   int targetFps) -> std::vector<glm::quat>
 		{
-			assert(rotationSamples.size() >= 2);
+			assert(rotationSamples.size() >= 1);
 
 			const auto start = 0.0f; // rotationSamples.front().time;
 			const auto end = rotationSamples.back().time;

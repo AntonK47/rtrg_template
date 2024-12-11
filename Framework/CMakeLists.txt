@@ -21,13 +21,16 @@ PRIVATE
 	VolkUtils.cpp
 	VmaUtils.hpp
 	VmaUtils.cpp
+	SDL3Utils.hpp
 	Application.hpp
 	Application.cpp
 	MeshImporter.hpp
 	MeshImporter.cpp
 	Animation.hpp
 	Math.hpp
-	Core.hpp)
+	Core.hpp
+	VulkanRHI.hpp
+    VulkanRHI.cpp)
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)
 
