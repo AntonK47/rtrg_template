@@ -30,7 +30,9 @@ PRIVATE
 	Math.hpp
 	Core.hpp
 	VulkanRHI.hpp
-    VulkanRHI.cpp)
+    VulkanRHI.cpp
+	$<$<CXX_COMPILER_ID:MSVC>:assimp.natvis>>
+	)
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)
 
