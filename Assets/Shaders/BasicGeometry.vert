@@ -1,8 +1,10 @@
 #version 460
 #extension GL_EXT_scalar_block_layout : enable
 
-layout(location = 0 ) out vec2 uv;
-layout(location = 1 ) out vec3 normal;
+layout(location = 0) out vec2 uv;
+layout(location = 1) out vec3 normal;
+layout(location = 2) out vec3 positionWS;
+layout(location = 3) out vec3 viewPositionWS;
 
 struct Vertex
 {
@@ -46,6 +48,7 @@ layout(push_constant) uniform constantsBlock
 	mat4 viewProjection;
 	mat4 view;
 	mat4 model;
+	vec3 viewPositionWS;
 } constants;
 
 
@@ -95,8 +98,11 @@ void main()
 	mat4 skinning = jointMatricies[int(i0)] * jointWeights.x 
 		+ jointMatricies[int(i1)] * jointWeights.y + jointMatricies[int(i2)] * jointWeights.z + jointMatricies[int(i3)] * jointWeights.w;
 
-	gl_Position = constants.viewProjection * constants.model * skinning * vec4(position, 1.0f);
+	positionWS = vec3(constants.model * skinning * vec4(position, 1.0f));
+
+	gl_Position = constants.viewProjection * vec4(positionWS,1.0f);
 
 	vec3 vertexNormal = vertex.normal;
-	normal = normalize(transpose(inverse(mat3(constants.view * constants.model * skinning))) * vertexNormal);
+	normal = transpose(inverse(mat3(skinning))) * vertexNormal;
+	viewPositionWS = constants.viewPositionWS;
 }

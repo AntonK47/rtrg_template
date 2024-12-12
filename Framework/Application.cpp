@@ -53,6 +53,7 @@ struct ConstantsData
 	glm::mat4 viewProjection;
 	glm::mat4 view;
 	glm::mat4 model;
+	glm::vec3 viewPositionWS;
 };
 
 struct Camera
@@ -738,6 +739,7 @@ struct BasicGeometryPass
 		const auto view = glm::lookAt(camera.position, camera.position + camera.forward, camera.up);
 		constantsData.viewProjection = projection * view;
 		constantsData.view = view;
+		constantsData.viewPositionWS = camera.position;
 
 		{
 			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[0]);
