@@ -28,6 +28,10 @@ namespace Framework
 	struct SceneInformation
 	{
 		U32 meshCount{};
+		U32 texturesCount{};
+		U32 animationCount{};
+		U32 skeletonCount{};
+		U32 materialCount{};
 	};
 
 	struct VerticesStreamDeclaration

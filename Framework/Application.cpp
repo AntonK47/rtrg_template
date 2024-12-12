@@ -7,6 +7,7 @@
 #include <fstream>
 #include <queue>
 #include <regex>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -14,12 +15,19 @@
 #include "ImGuiUtils.hpp"
 #include "Math.hpp"
 #include "MeshImporter.hpp"
+#include "MiniAssetImporterEditor.hpp"
 #include "SDL3Utils.hpp"
 #include "VulkanRHI.hpp"
 
 using namespace Framework;
 using namespace Framework::Animation;
 using namespace Framework::Graphics;
+
+template <typename... Args>
+std::string runtime_format(std::string_view rt_fmt_str, Args&&... args)
+{
+	return std::vformat(rt_fmt_str, std::make_format_args(args...));
+}
 
 const char* sample_surface_01 =
 	"void surface(in Geometry geometry, out vec4 color){ color = vec4(1.0f,0.0f,0.0f,1.0f);}";
@@ -1921,10 +1929,9 @@ void Framework::Application::Run()
 	// scene.Upload("Assets/Meshes/junkrat/source/animated_2.fbx", vulkanContext);
 	// scene.Upload("Assets/Meshes/mira/source/Mira2.fbx", vulkanContext);
 
-	// scene.Upload("Assets/Meshes/aaron/source/Aaron/SK_Aaron.gltf", vulkanContext);
-	// scene.Upload("Assets/Meshes/leslie_kornwell/scene.gltf", vulkanContext);
-	scene.Upload("Assets/Meshes/the_last_stronghold_animated/scene.gltf", vulkanContext);
-
+	 //scene.Upload("Assets/Meshes/aaron/source/Aaron/SK_Aaron.gltf", vulkanContext);
+	scene.Upload("Assets/Meshes/leslie_kornwell/scene.gltf", vulkanContext);
+	// scene.Upload("Assets/Meshes/the_last_stronghold_animated/scene.gltf", vulkanContext);
 	// scene.Upload("Assets/Meshes/CesiumMan.glb", vulkanContext);
 	/*const auto myStaticMesh = scene.Upload("Assets/Meshes/bunny.obj", vulkanContext);*/
 #pragma endregion
@@ -2007,7 +2014,7 @@ void Framework::Application::Run()
 			.data = scene.animationDataSet.animations[i], .playbackRate = 1.00f, .startTime = 0.0f, .loop = true });
 	}
 
-
+	auto  assetImporterEditor = Editor::AssetImporterEditor{};
 	while (shouldRun)
 	{
 #pragma region Handle window events
@@ -2110,6 +2117,8 @@ void Framework::Application::Run()
 		static bool show_demo_window = true;
 		ImGui::ShowDemoWindow(&show_demo_window);
 
+		assetImporterEditor.Draw();
+
 		static float animationTime = 0.0f;
 		static bool useGlobalTimeInAnimation = true;
 		static int selectedAnimation = 0;
@@ -2139,18 +2148,14 @@ void Framework::Application::Run()
 			ImGui::SameLine();
 			if (ImGui::Button("Alter Material"))
 			{
-				std::string generatedCode = "void surface(in Geometry geometry, out vec4 color){ color = "
-											"vec4(%%arg1%%,%%arg2%%,%%arg3%%,1.0f);}";
-				generatedCode = std::regex_replace(generatedCode, std::regex("%%arg1%%"),
-												   std::to_string((std::rand() % 255) / 255.0f));
-				generatedCode = std::regex_replace(generatedCode, std::regex("%%arg2%%"),
-												   std::to_string((std::rand() % 255) / 255.0f));
-				generatedCode = std::regex_replace(generatedCode, std::regex("%%arg3%%"),
-												   std::to_string((std::rand() % 255) / 255.0f));
+				std::string generatedCode = "void surface(in Geometry geometry, out vec4 color){{ color = "
+											"vec4({},{},{},1.0f);}}";
+				generatedCode = runtime_format(generatedCode, (std::rand() % 255) / 255.0f, (std::rand() % 255) / 255.0f,
+											   (std::rand() % 255) / 255.0f);
 
 				MaterialAsset myNewMaterial{ generatedCode };
 				const auto pso = basicGeometryPass.CompileOpaqueMaterialPsoOnly(vulkanContext, myNewMaterial);
-				//psoForLateDestruction.push_back(basicGeometryPass.psoCache[i]);
+				// psoForLateDestruction.push_back(basicGeometryPass.psoCache[i]);
 
 
 				const auto result = vkQueueWaitIdle(vulkanContext.graphicsQueue);

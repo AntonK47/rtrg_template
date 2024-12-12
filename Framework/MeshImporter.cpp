@@ -22,6 +22,10 @@ AssetImporter::AssetImporter(const std::filesystem::path& filePath)
 	currentlyLoadedScene = (aiScene*)scene;
 
 	sceneInformation.meshCount = scene->mNumMeshes;
+	sceneInformation.animationCount = scene->mNumAnimations;
+	sceneInformation.materialCount = scene->mNumMaterials;
+	sceneInformation.texturesCount = scene->mNumTextures;
+	sceneInformation.skeletonCount = scene->mNumSkeletons;
 }
 
 AssetImporter::~AssetImporter()
@@ -376,7 +380,7 @@ Skeleton AssetImporter::ImportSkeleton(U32 meshIndex)
 				node->mTransformation.d1, node->mTransformation.d2, node->mTransformation.d3,
 				node->mTransformation.d4 }));
 
-			
+
 			skeleton.joints.push_back(Joint{ boneMatrix[std::string{ node->mName.C_Str() }], inverseTransform,
 											 parentIndex, node->mName.C_Str() });
 		}
@@ -453,7 +457,7 @@ AnimationDataSet AssetImporter::LoadAllAnimations(const Skeleton& skeleton, cons
 			for (int i = 1; i < frames - 1; i++)
 			{
 				t += timePerFrame;
-				while (positionSamples[a].time + timePerFrame< t)
+				while (positionSamples[a].time + timePerFrame < t)
 				{
 					a++;
 				}

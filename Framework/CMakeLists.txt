@@ -32,6 +32,7 @@ PRIVATE
 	VulkanRHI.hpp
     VulkanRHI.cpp
 	$<$<CXX_COMPILER_ID:MSVC>:assimp.natvis>>
+	MiniAssetImporterEditor.hpp
 	)
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)
