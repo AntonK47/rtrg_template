@@ -2,11 +2,13 @@
 
 #include "ImGuiUtils.hpp"
 #include "Math.hpp"
+#include "Mesh.hpp"
 #include "MeshImporter.hpp"
 
-#include <Mesh.hpp>
 #include <filesystem>
 #include <vector>
+
+#include <imgui-node-editor/imgui_node_editor.h>
 
 namespace Framework
 {
@@ -15,6 +17,15 @@ namespace Framework
 
 		struct AssetImporterEditor
 		{
+			ax::NodeEditor::EditorContext* editorContext;
+
+			AssetImporterEditor()
+			{
+				ax::NodeEditor::Config config;
+				config.SettingsFile = "Simple.json";
+				editorContext = ax::NodeEditor::CreateEditor(&config);
+			}
+
 			std::vector<std::filesystem::path> ScanAssetsInFolder()
 			{
 				auto foundAssetFiles = std::vector<std::filesystem::path>{};
@@ -82,6 +93,53 @@ namespace Framework
 				ImGui::LabelText("Materials", "%i", importInfo.materialCount);
 				ImGui::LabelText("Skeletons", "%i", importInfo.skeletonCount);
 				ImGui::LabelText("Animations", "%i", importInfo.animationCount);
+
+				ImGui::End();
+
+
+				ImGui::Begin("Object Editor");
+
+				static ImGuiTextFilter filter;
+				filter.Draw();
+				const auto selected = ImGui::IsItemActive();
+				const char* lines[] = { "aaa1.c",	"bbb1.c",	"ccc1.c", "aaa2.cpp",
+										"bbb2.cpp", "ccc2.cpp", "abc.h",  "hello, world" };
+
+				if (selected)
+				{
+
+					if (ImGui::BeginListBox("##List"))
+					{
+						for (int i = 0; i < IM_ARRAYSIZE(lines); i++)
+						{
+							if (filter.PassFilter(lines[i]))
+							{
+								ImGui::Selectable(lines[i], false);
+							}
+						}
+						ImGui::EndListBox();
+					}
+				}
+				ImGui::End();
+
+				ImGui::Begin("Node Test");
+				ImGui::Separator();
+				ax::NodeEditor::SetCurrentEditor(editorContext);
+				ax::NodeEditor::Begin("editor");
+				int uniqueId = 1;
+				// Start drawing nodes.
+				ax::NodeEditor::BeginNode(uniqueId++);
+				ImGui::Text("Node A");
+				ax::NodeEditor::BeginPin(uniqueId++, ax::NodeEditor::PinKind::Input);
+				ImGui::Text("-> In");
+				ax::NodeEditor::EndPin();
+				ImGui::SameLine();
+				ax::NodeEditor::BeginPin(uniqueId++, ax::NodeEditor::PinKind::Output);
+				ImGui::Text("Out ->");
+				ax::NodeEditor::EndPin();
+				ax::NodeEditor::EndNode();
+				ax::NodeEditor::End();
+				ax::NodeEditor::SetCurrentEditor(nullptr);
 
 				ImGui::End();
 			}
