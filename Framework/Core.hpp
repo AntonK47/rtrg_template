@@ -2,6 +2,13 @@
 
 #include <cstdint>
 #include <assert.h>
+#include <format>
+
+template <typename... Args>
+std::string runtime_format(std::string_view rt_fmt_str, Args&&... args)
+{
+	return std::vformat(rt_fmt_str, std::make_format_args(args...));
+}
 
 namespace Framework
 {

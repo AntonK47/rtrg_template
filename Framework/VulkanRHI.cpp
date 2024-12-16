@@ -1,6 +1,6 @@
 #include "VulkanRHI.hpp"
-
 #include <fstream>
+#include "SDL3Utils.hpp"
 
 using namespace Framework::Graphics;
 
@@ -42,6 +42,414 @@ namespace
 		return shouldMap;
 	}
 } // namespace
+
+void Framework::Graphics::VulkanContext::Initialize(std::string_view applicationName, SDL_Window* window,
+													const WindowViewport& windowViewport)
+{
+#pragma region Vulkan Instance creation
+	{
+		const auto result = volkInitialize();
+		assert(result == VK_SUCCESS);
+	}
+
+	auto instanceExtensions = std::vector<const char*>{};
+
+	{
+		auto extensionsCount = uint32_t{};
+		auto extensions = SDL_Vulkan_GetInstanceExtensions(&extensionsCount);
+
+		instanceExtensions.resize(extensionsCount);
+		for (auto i = 0; i < extensionsCount; i++)
+		{
+			instanceExtensions[i] = extensions[i];
+		}
+	}
+
+	{
+		auto instanceLayers = std::vector<const char*>{};
+#ifndef NDEBUG
+		instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
+#endif
+		instanceExtensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+		instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+		const auto applicationInfo = VkApplicationInfo{ .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+														.pNext = nullptr,
+														.pApplicationName = applicationName.data(),
+														.applicationVersion = 0,
+														.pEngineName = applicationName.data(),
+														.engineVersion = 0,
+														.apiVersion = VK_API_VERSION_1_3 };
+
+		const auto instanceCreateInfo =
+			VkInstanceCreateInfo{ .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+								  .pNext = nullptr,
+								  .flags = 0,
+								  .pApplicationInfo = &applicationInfo,
+								  .enabledLayerCount = static_cast<uint32_t>(instanceLayers.size()),
+								  .ppEnabledLayerNames = instanceLayers.data(),
+								  .enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size()),
+								  .ppEnabledExtensionNames = instanceExtensions.data() };
+
+		const auto result = vkCreateInstance(&instanceCreateInfo, nullptr, &instance);
+		assert(result == VK_SUCCESS);
+	}
+
+	volkLoadInstance(instance);
+#pragma endregion
+
+#pragma region Physical device selection
+	{
+		auto physicalDeviceCount = uint32_t{};
+		auto result = vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, nullptr);
+		assert(result == VK_SUCCESS);
+
+		std::vector<VkPhysicalDevice> physicalDevices{};
+		physicalDevices.resize(physicalDeviceCount);
+
+		result = vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices.data());
+		assert(result == VK_SUCCESS);
+
+
+		struct FamilyQueueQueryInfo
+		{
+			uint32_t rating{ 0 };
+			bool hasGraphicsQueue{ false };
+			uint32_t graphicsQueueFamilyIndex{};
+			uint32_t transferQueueFamilyIndex{};
+			bool isDiscrete{ false };
+		};
+
+		auto physicalDevicesQuery = std::vector<FamilyQueueQueryInfo>{};
+		physicalDevicesQuery.resize(physicalDeviceCount);
+
+		for (auto i = 0; i < physicalDevices.size(); i++)
+		{
+			const auto& physicalDevice = physicalDevices[i];
+
+			// QUEUE CHECKS
+			{
+
+				auto queueFamilyPropertiesCount = uint32_t{ 0 };
+				vkGetPhysicalDeviceQueueFamilyProperties2(physicalDevice, &queueFamilyPropertiesCount, nullptr);
+
+				auto queueFamilyProperties = std::vector<VkQueueFamilyProperties2>{};
+				queueFamilyProperties.resize(queueFamilyPropertiesCount);
+				for (auto index = 0; index < queueFamilyProperties.size(); index++)
+				{
+					queueFamilyProperties[index].sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
+					queueFamilyProperties[index].pNext = nullptr;
+				}
+
+				vkGetPhysicalDeviceQueueFamilyProperties2(physicalDevice, &queueFamilyPropertiesCount,
+														  queueFamilyProperties.data());
+
+				auto hasRequiredGraphicsQueueFamily = false;
+				auto foundGraphicsIndex = 0;
+
+				// SEARCH FOR GRAPHICS QUEUE WITH PRESENT SUPPORT
+				for (auto index = 0; index < queueFamilyProperties.size(); index++)
+				{
+					const auto hasGraphicsBit = (queueFamilyProperties[i].queueFamilyProperties.queueFlags &
+												 VK_QUEUE_GRAPHICS_BIT) == VK_QUEUE_GRAPHICS_BIT;
+					const auto canPresent = SDL_Vulkan_GetPresentationSupport(instance, physicalDevice, index);
+
+					hasRequiredGraphicsQueueFamily = hasGraphicsBit && canPresent;
+
+					if (hasRequiredGraphicsQueueFamily)
+					{
+						foundGraphicsIndex = index;
+						break;
+					}
+				}
+
+				auto hasRequiredTransferQueueFamily = false;
+				auto foundTransferIndex = 0;
+				// SEARCH FOR TRANSFER QUEUE
+				for (auto index = 0; index < queueFamilyProperties.size(); index++)
+				{
+					hasRequiredTransferQueueFamily = (queueFamilyProperties[i].queueFamilyProperties.queueFlags &
+													  VK_QUEUE_TRANSFER_BIT) == VK_QUEUE_TRANSFER_BIT;
+
+					if (hasRequiredTransferQueueFamily and (index != foundGraphicsIndex))
+					{
+						foundTransferIndex = index;
+						break;
+					}
+				}
+
+				if (hasRequiredGraphicsQueueFamily and hasRequiredTransferQueueFamily)
+				{
+					physicalDevicesQuery[i].hasGraphicsQueue = hasRequiredGraphicsQueueFamily;
+					physicalDevicesQuery[i].graphicsQueueFamilyIndex = foundGraphicsIndex;
+					physicalDevicesQuery[i].transferQueueFamilyIndex = foundTransferIndex;
+					physicalDevicesQuery[i].rating += 100;
+				}
+			}
+
+			// DEVICE TYPE CHECK
+			{
+				VkPhysicalDeviceProperties2 properties{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+														.pNext = nullptr };
+				vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
+
+				if (properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+				{
+					physicalDevicesQuery[i].rating += 1000;
+					physicalDevicesQuery[i].isDiscrete = true;
+				}
+			}
+		}
+
+
+		// SELECT HEIGHT RATING DEVICE
+		{
+			const auto& bestCandidate = std::max_element(
+				physicalDevicesQuery.begin(), physicalDevicesQuery.end(),
+				[](const FamilyQueueQueryInfo& a, const FamilyQueueQueryInfo& b) { return a.rating > b.rating; });
+			const auto bestCandidateIndex = std::distance(physicalDevicesQuery.begin(), bestCandidate);
+
+			physicalDevice = physicalDevices[bestCandidateIndex];
+			graphicsQueueFamilyIndex = physicalDevicesQuery[bestCandidateIndex].graphicsQueueFamilyIndex;
+			transferQueueFamilyIndex = physicalDevicesQuery[bestCandidateIndex].transferQueueFamilyIndex;
+			// TODO: Again, we require independent graphics and transfer queue for now!
+			assert(graphicsQueueFamilyIndex != transferQueueFamilyIndex);
+		}
+	}
+#pragma endregion
+
+#pragma region Device creation
+	{
+		const auto enabledDeviceExtensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+
+
+		const auto queuePriority = 1.0f;
+		const auto queueCreateInfos =
+			std::array{ VkDeviceQueueCreateInfo{ .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+												 .pNext = nullptr,
+												 .flags = 0,
+												 .queueFamilyIndex = graphicsQueueFamilyIndex,
+												 .queueCount = 1,
+												 .pQueuePriorities = &queuePriority },
+						VkDeviceQueueCreateInfo{ .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+												 .pNext = nullptr,
+												 .flags = 0,
+												 .queueFamilyIndex = transferQueueFamilyIndex,
+												 .queueCount = 1,
+												 .pQueuePriorities = &queuePriority } };
+
+		auto physicalDeviceFeatures13 = VkPhysicalDeviceVulkan13Features{};
+		physicalDeviceFeatures13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+		physicalDeviceFeatures13.pNext = nullptr;
+		physicalDeviceFeatures13.synchronization2 = VK_TRUE;
+		physicalDeviceFeatures13.dynamicRendering = VK_TRUE;
+
+		auto physicalDeviceFeatures12 = VkPhysicalDeviceVulkan12Features{};
+		physicalDeviceFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+		physicalDeviceFeatures12.pNext = &physicalDeviceFeatures13;
+		physicalDeviceFeatures12.scalarBlockLayout = VK_TRUE;
+
+		auto physicalDeviceFeatures11 = VkPhysicalDeviceVulkan11Features{};
+		physicalDeviceFeatures11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+		physicalDeviceFeatures11.pNext = &physicalDeviceFeatures12;
+		physicalDeviceFeatures11.shaderDrawParameters = VK_TRUE;
+
+
+		const auto deviceCreateInfo =
+			VkDeviceCreateInfo{ .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+								.pNext = &physicalDeviceFeatures11,
+								.flags = 0,
+								.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
+								.pQueueCreateInfos = queueCreateInfos.data(),
+								.enabledLayerCount = 0,
+								.ppEnabledLayerNames = nullptr,
+								.enabledExtensionCount = enabledDeviceExtensions.size(),
+								.ppEnabledExtensionNames = enabledDeviceExtensions.data(),
+								.pEnabledFeatures = nullptr };
+
+		const auto result = vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device);
+		assert(result == VK_SUCCESS);
+	}
+	volkLoadDevice(device);
+#pragma endregion
+
+#pragma region CreateResources VMA
+	{
+		const auto vulkanFunctions =
+			VmaVulkanFunctions{ .vkGetInstanceProcAddr = vkGetInstanceProcAddr,
+								.vkGetDeviceProcAddr = vkGetDeviceProcAddr,
+								.vkGetPhysicalDeviceProperties = vkGetPhysicalDeviceProperties,
+								.vkGetPhysicalDeviceMemoryProperties = vkGetPhysicalDeviceMemoryProperties,
+								.vkAllocateMemory = vkAllocateMemory,
+								.vkFreeMemory = vkFreeMemory,
+								.vkMapMemory = vkMapMemory,
+								.vkUnmapMemory = vkUnmapMemory,
+								.vkFlushMappedMemoryRanges = vkFlushMappedMemoryRanges,
+								.vkInvalidateMappedMemoryRanges = vkInvalidateMappedMemoryRanges,
+								.vkBindBufferMemory = vkBindBufferMemory,
+								.vkBindImageMemory = vkBindImageMemory,
+								.vkGetBufferMemoryRequirements = vkGetBufferMemoryRequirements,
+								.vkGetImageMemoryRequirements = vkGetImageMemoryRequirements,
+								.vkCreateBuffer = vkCreateBuffer,
+								.vkDestroyBuffer = vkDestroyBuffer,
+								.vkCreateImage = vkCreateImage,
+								.vkDestroyImage = vkDestroyImage,
+								.vkCmdCopyBuffer = vkCmdCopyBuffer,
+								.vkGetBufferMemoryRequirements2KHR = vkGetBufferMemoryRequirements2,
+								.vkGetImageMemoryRequirements2KHR = vkGetImageMemoryRequirements2,
+								.vkBindBufferMemory2KHR = vkBindBufferMemory2,
+								.vkBindImageMemory2KHR = vkBindImageMemory2,
+								.vkGetPhysicalDeviceMemoryProperties2KHR = vkGetPhysicalDeviceMemoryProperties2,
+								.vkGetDeviceBufferMemoryRequirements = vkGetDeviceBufferMemoryRequirements,
+								.vkGetDeviceImageMemoryRequirements = vkGetDeviceImageMemoryRequirements };
+
+
+		const auto allocatorCreateInfo = VmaAllocatorCreateInfo{ .flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT,
+																 .physicalDevice = physicalDevice,
+																 .device = device,
+																 .pVulkanFunctions = &vulkanFunctions,
+																 .instance = instance,
+																 .vulkanApiVersion = VK_API_VERSION_1_3 };
+
+		const auto result = vmaCreateAllocator(&allocatorCreateInfo, &allocator);
+		assert(result == VK_SUCCESS);
+	}
+#pragma endregion
+
+
+#pragma region Swapchain creation
+	{
+		const auto result = SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface);
+		assert(result);
+	}
+	{
+		auto supported = VkBool32{};
+		const auto result =
+			vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, graphicsQueueFamilyIndex, surface, &supported);
+		assert(result == VK_SUCCESS);
+		assert(supported == VK_TRUE);
+	}
+	{
+		CreateSwapchain(windowViewport);
+	}
+#pragma endregion
+
+#pragma region Double-buffered resource creation
+	// assume 2, for now
+	frameResourceCount = 2;
+
+	perFrameResources.resize(frameResourceCount);
+	for (auto i = 0; i < frameResourceCount; i++)
+	{
+		const auto fenceCreateInfo = VkFenceCreateInfo{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+														.pNext = nullptr,
+														.flags = VK_FENCE_CREATE_SIGNALED_BIT };
+
+		const auto result = vkCreateFence(device, &fenceCreateInfo, nullptr, &perFrameResources[i].frameFinished);
+		assert(result == VK_SUCCESS);
+	}
+
+	for (auto i = 0; i < frameResourceCount; i++)
+	{
+		const auto semaphoreCreateInfo =
+			VkSemaphoreCreateInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr, .flags = 0 };
+		const auto result =
+			vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &perFrameResources[i].readyToPresent);
+		assert(result == VK_SUCCESS);
+	}
+
+	for (auto i = 0; i < frameResourceCount; i++)
+	{
+		const auto semaphoreCreateInfo =
+			VkSemaphoreCreateInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr, .flags = 0 };
+		const auto result =
+			vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &perFrameResources[i].readyToRender);
+		assert(result == VK_SUCCESS);
+	}
+#pragma endregion
+
+#pragma region Command buffer creation
+
+	for (auto i = 0; i < frameResourceCount; i++)
+	{
+		const auto poolCreateInfo = VkCommandPoolCreateInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+															 .pNext = nullptr,
+															 .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+															 .queueFamilyIndex = graphicsQueueFamilyIndex };
+		const auto result = vkCreateCommandPool(device, &poolCreateInfo, nullptr, &perFrameResources[i].commandPool);
+		assert(result == VK_SUCCESS);
+	}
+
+	// create only one command buffer per pool, fon now, it might change in the future
+	for (auto i = 0; i < frameResourceCount; i++)
+	{
+		const auto allocateInfo = VkCommandBufferAllocateInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+															   .pNext = nullptr,
+															   .commandPool = perFrameResources[i].commandPool,
+															   .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+															   .commandBufferCount = 1 };
+		const auto result = vkAllocateCommandBuffers(device, &allocateInfo, &perFrameResources[i].commandBuffer);
+		assert(result == VK_SUCCESS);
+	}
+
+#pragma endregion
+
+#pragma region Request graphics and transfer queue
+	{
+		const auto deviceQueueInfo = VkDeviceQueueInfo2{ .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+														 .pNext = nullptr,
+														 .flags = 0,
+														 .queueFamilyIndex = graphicsQueueFamilyIndex,
+														 .queueIndex = 0 };
+		vkGetDeviceQueue2(device, &deviceQueueInfo, &graphicsQueue);
+	}
+	{
+		const auto deviceQueueInfo = VkDeviceQueueInfo2{ .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+														 .pNext = nullptr,
+														 .flags = 0,
+														 .queueFamilyIndex = transferQueueFamilyIndex,
+														 .queueIndex = 0 };
+		vkGetDeviceQueue2(device, &deviceQueueInfo, &transferQueue);
+	}
+#pragma endregion
+}
+
+void Framework::Graphics::VulkanContext::Deinitialize()
+{
+	vmaDestroyAllocator(allocator);
+
+	{
+		ReleaseSwapchainResources();
+
+		for (auto i = 0; i < perFrameResources.size(); i++)
+		{
+			const auto& perFrameResource = perFrameResources[i];
+			vkDestroyFence(device, perFrameResource.frameFinished, nullptr);
+			vkDestroySemaphore(device, perFrameResource.readyToPresent, nullptr);
+			vkDestroySemaphore(device, perFrameResource.readyToRender, nullptr);
+
+			vkDestroyCommandPool(device, perFrameResource.commandPool, nullptr);
+		}
+
+		SDL_Vulkan_DestroySurface(instance, surface, nullptr);
+
+		vkDestroyDevice(device, nullptr);
+		vkDestroyInstance(instance, nullptr);
+	}
+}
+
+void Framework::Graphics::VulkanContext::WaitIdle()
+{
+	// wait until all submitted work is finished
+	{
+		const auto result = vkQueueWaitIdle(graphicsQueue);
+		assert(result == VK_SUCCESS);
+	}
+	{
+		const auto result = vkQueueWaitIdle(transferQueue);
+		assert(result == VK_SUCCESS);
+	}
+}
 
 void VulkanContext::SetObjectDebugName(VkObjectType objectType, uint64_t objectHandle, const char* name) const
 {
@@ -245,7 +653,7 @@ void VulkanContext::CreateSwapchain(const WindowViewport& windowViewport)
 								  .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 								  .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
 								  .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-								  .presentMode = VK_PRESENT_MODE_FIFO_KHR, // VK_PRESENT_MODE_IMMEDIATE_KHR,
+								  .presentMode = VK_PRESENT_MODE_FIFO_KHR,// VK_PRESENT_MODE_IMMEDIATE_KHR,
 								  .clipped = VK_FALSE,
 								  .oldSwapchain = VK_NULL_HANDLE };
 

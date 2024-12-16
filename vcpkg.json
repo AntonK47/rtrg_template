@@ -9,6 +9,11 @@
     "vulkan-memory-allocator",
     "assimp",
     {
+      "name": "stduuid",
+      "features": [ "system-gen" ]
+    },
+    "imgui-node-editor",
+    {
       "name": "sdl3",
       "features": [ "vulkan" ]
     }

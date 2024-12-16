@@ -36,8 +36,8 @@ namespace Framework
 
 		struct GraphicsBuffer
 		{
-			VmaAllocation allocation;
-			VkBuffer buffer;
+			VmaAllocation allocation{};
+			VkBuffer buffer{};
 			void* mappedPtr{ nullptr };
 		};
 
@@ -82,6 +82,12 @@ namespace Framework
 			std::vector<PerFrameResource> perFrameResources{};
 
 		public:
+			void Initialize(std::string_view applicationName, SDL_Window* window, const WindowViewport& windowViewport);
+
+			void Deinitialize();
+			void WaitIdle();
+
+
 			void SetObjectDebugName(VkObjectType objectType, uint64_t objectHandle, const char* name) const;
 			void BeginDebugLabelName(VkCommandBuffer cmd, const char* name, DebugColor color) const;
 			void EndDebugLabelName(VkCommandBuffer cmd) const;

@@ -32,12 +32,12 @@ namespace Utils
 
 	struct ShaderInfo
 	{
-		std::string entryPoint;
-		std::vector<std::string> compilationDefines;
-		ShaderStage shaderStage;
-		GlslShaderCode shaderCode;
-		bool enableDebugCompilation = true;
+		std::string entryPoint{ "main" };
+		std::vector<std::string> compilationDefines{};
+		ShaderStage shaderStage{ ShaderStage::Vertex };
+		GlslShaderCode shaderCode{};
+		bool enableDebugCompilation{ true };
 	};
 
 	CompilationResult CompileToSpirv(const ShaderInfo& info, ShaderByteCode& byteCode);
-} // namespace util
+} // namespace Utils

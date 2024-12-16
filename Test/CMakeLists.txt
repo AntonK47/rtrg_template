@@ -19,7 +19,9 @@ target_sources(
 	Framework_test
 PRIVATE 
 	Utils_test.cpp
-	MeshImporter_test.cpp)
+	MeshImporter_test.cpp
+	AssetStoringLoading_test.cpp
+)
 target_link_libraries(Framework_test
 PRIVATE
 	GTest::gtest_main
