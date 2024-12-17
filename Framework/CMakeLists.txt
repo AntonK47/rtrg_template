@@ -20,6 +20,7 @@ PRIVATE
 	Utils.cpp
     Utils.hpp
 	ImGuiUtils.hpp
+	ImGuiUtils.cpp
 	VolkUtils.hpp
 	VolkUtils.cpp
 	VmaUtils.hpp

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "Animation.hpp"
+#include "BasicRenderPipeline.hpp"
 #include "ImGuiUtils.hpp"
 #include "Math.hpp"
 #include "MeshImporter.hpp"
@@ -19,12 +20,9 @@
 #include "SDL3Utils.hpp"
 #include "VulkanRHI.hpp"
 
-#include "BasicRenderPipeline.hpp"
-
 using namespace Framework;
 using namespace Framework::Animation;
 using namespace Framework::Graphics;
-
 
 using ViewportSize = glm::vec2;
 
@@ -48,6 +46,59 @@ static std::tuple<glm::vec2, bool> GetScreenSpacePosition(const ViewportSize& vi
 		glm::vec2{ (positionNDC.x + 1.0f) * 0.5f * viewport.x, (positionNDC.y + 1.0f) * 0.5f * viewport.y };
 
 	return std::make_tuple(screenPosition, isVisible);
+}
+
+static void UpdateCamera(Camera& camera)
+{
+#pragma region Camera Controller
+
+	auto& io = ImGui::GetIO();
+	auto moveCameraFaster = false;
+	const auto fastSpeed = 250.0f;
+	moveCameraFaster = ImGui::IsKeyDown(ImGuiKey_LeftShift);
+
+	if (ImGui::IsKeyDown(ImGuiKey_W))
+	{
+		camera.position += camera.forward * camera.movementSpeed * (moveCameraFaster ? fastSpeed : 1.0f) *
+			io.DeltaTime * camera.movementSpeedScale;
+	}
+	if (ImGui::IsKeyDown(ImGuiKey_S))
+	{
+		camera.position -= camera.forward * camera.movementSpeed * (moveCameraFaster ? fastSpeed : 1.0f) *
+			io.DeltaTime * camera.movementSpeedScale;
+	}
+	if (ImGui::IsKeyDown(ImGuiKey_A))
+	{
+		camera.position += glm::normalize(glm::cross(camera.forward, camera.up)) * camera.movementSpeed * io.DeltaTime *
+			(moveCameraFaster ? fastSpeed : 1.0f) * camera.movementSpeedScale;
+	}
+	if (ImGui::IsKeyDown(ImGuiKey_D))
+	{
+		camera.position -= glm::normalize(glm::cross(camera.forward, camera.up)) * camera.movementSpeed * io.DeltaTime *
+			(moveCameraFaster ? fastSpeed : 1.0f) * camera.movementSpeedScale;
+	}
+
+	if (ImGui::IsMouseDown(ImGuiMouseButton_Left) and not io.WantCaptureMouse)
+	{
+		auto delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
+		ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+
+		const auto right = glm::normalize(cross(camera.forward, camera.up));
+		const auto up = glm::normalize(cross(right, camera.forward));
+
+		const auto f = glm::normalize(camera.forward + right * delta.y + up * delta.x);
+
+		auto rotationAxis = glm::normalize(glm::cross(f, camera.forward));
+
+		if (glm::length(rotationAxis) >= 0.1f)
+		{
+			const auto rotation =
+				glm::rotate(glm::identity<glm::mat4>(),
+							glm::radians(glm::length(glm::vec2(delta.x, delta.y)) * camera.sensitivity), f);
+
+			camera.forward = glm::normalize(glm::vec3(rotation * glm::vec4(camera.forward, 0.0f)));
+		}
+	}
 }
 
 void Framework::Application::Run()
@@ -74,6 +125,7 @@ void Framework::Application::Run()
 	}
 #pragma endregion
 
+#pragma region Setup
 	WindowViewport windowViewport{};
 	windowViewport.UpdateSize(window);
 	windowViewport.shouldRecreateWindowSizeDependedResources = false;
@@ -83,6 +135,10 @@ void Framework::Application::Run()
 
 	auto basicRenderPipeline = BasicRenderPipeline{};
 	basicRenderPipeline.Initialize(vulkanContext, windowViewport);
+
+	auto guiSystem = GuiSystem{};
+	guiSystem.Initialize(vulkanContext, window, basicRenderPipeline.imGuiPass);
+#pragma endregion
 
 #pragma region Scene preparation
 
@@ -105,52 +161,6 @@ void Framework::Application::Run()
 						  .up = glm::vec3{ 0.0f, 1.0f, 0.0f },
 						  .movementSpeed = 0.01f,
 						  .sensitivity = 0.2f };
-
-	auto moveCameraFaster = false;
-	const auto fastSpeed = 250.0f;
-#pragma endregion
-
-
-#pragma endregion
-
-#pragma region ImGui initialization
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-
-	ImGuiIO& io = ImGui::GetIO();
-	float dpiScale = SDL_GetWindowDisplayScale(window);
-	io.FontGlobalScale = dpiScale;
-
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-
-	ImGui::StyleColorsDark();
-
-	const auto pipelineRendering =
-		VkPipelineRenderingCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-									   .pNext = nullptr,
-									   .viewMask = 0,
-									   .colorAttachmentCount = 1,
-									   .pColorAttachmentFormats = &vulkanContext.swapchainImageFormat,
-									   .depthAttachmentFormat = VK_FORMAT_UNDEFINED,
-									   .stencilAttachmentFormat = VK_FORMAT_UNDEFINED };
-
-	auto initInfo = ImGui_ImplVulkan_InitInfo{ .Instance = vulkanContext.instance,
-											   .PhysicalDevice = vulkanContext.physicalDevice,
-											   .Device = vulkanContext.device,
-											   .QueueFamily = vulkanContext.graphicsQueueFamilyIndex,
-											   .Queue = vulkanContext.graphicsQueue,
-											   .DescriptorPool = basicRenderPipeline.imGuiPass.descriptorPool,
-											   .MinImageCount = vulkanContext.swapchainImageCount,
-											   .ImageCount = vulkanContext.swapchainImageCount,
-											   .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
-											   .UseDynamicRendering = true,
-											   .PipelineRenderingCreateInfo = pipelineRendering,
-											   .Allocator = nullptr };
-
-
-	ImGui_ImplVulkan_Init(&initInfo);
-	ImGui_ImplSDL3_InitForVulkan(window);
 #pragma endregion
 
 	bool shouldRun = true;
@@ -169,8 +179,6 @@ void Framework::Application::Run()
 	auto assetImporterEditor = Editor::AssetImporterEditor{};
 	while (shouldRun)
 	{
-
-
 #pragma region Handle window events
 		SDL_Event event;
 		while (SDL_PollEvent(&event))
@@ -199,7 +207,6 @@ void Framework::Application::Run()
 #pragma endregion
 
 #pragma region Recreate frame Dependent resources
-
 		if (windowViewport.shouldRecreateWindowSizeDependedResources)
 		{
 			vulkanContext.WaitIdle();
@@ -207,67 +214,14 @@ void Framework::Application::Run()
 			basicRenderPipeline.basicGeometryPass.RecreateViewDependentResources(vulkanContext, windowViewport);
 			windowViewport.shouldRecreateWindowSizeDependedResources = false;
 		}
-
 #pragma endregion
 
 #pragma region Update State
-
-		ImGui_ImplVulkan_NewFrame();
-		ImGui_ImplSDL3_NewFrame();
-
-		ImGui::NewFrame();
-
-#pragma region Camera Controller
-
-		moveCameraFaster = ImGui::IsKeyDown(ImGuiKey_LeftShift);
-
-		if (ImGui::IsKeyDown(ImGuiKey_W))
-		{
-			camera.position += camera.forward * camera.movementSpeed * (moveCameraFaster ? fastSpeed : 1.0f) *
-				io.DeltaTime * camera.movementSpeedScale;
-		}
-		if (ImGui::IsKeyDown(ImGuiKey_S))
-		{
-			camera.position -= camera.forward * camera.movementSpeed * (moveCameraFaster ? fastSpeed : 1.0f) *
-				io.DeltaTime * camera.movementSpeedScale;
-		}
-		if (ImGui::IsKeyDown(ImGuiKey_A))
-		{
-			camera.position += glm::normalize(glm::cross(camera.forward, camera.up)) * camera.movementSpeed *
-				io.DeltaTime * (moveCameraFaster ? fastSpeed : 1.0f) * camera.movementSpeedScale;
-		}
-		if (ImGui::IsKeyDown(ImGuiKey_D))
-		{
-			camera.position -= glm::normalize(glm::cross(camera.forward, camera.up)) * camera.movementSpeed *
-				io.DeltaTime * (moveCameraFaster ? fastSpeed : 1.0f) * camera.movementSpeedScale;
-		}
-
-		if (ImGui::IsMouseDown(ImGuiMouseButton_Left) and not io.WantCaptureMouse)
-		{
-			auto delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
-			ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
-
-			const auto right = glm::normalize(cross(camera.forward, camera.up));
-			const auto up = glm::normalize(cross(right, camera.forward));
-
-			const auto f = glm::normalize(camera.forward + right * delta.y + up * delta.x);
-
-			auto rotationAxis = glm::normalize(glm::cross(f, camera.forward));
-
-			if (glm::length(rotationAxis) >= 0.1f)
-			{
-				const auto rotation =
-					glm::rotate(glm::identity<glm::mat4>(),
-								glm::radians(glm::length(glm::vec2(delta.x, delta.y)) * camera.sensitivity), f);
-
-				camera.forward = glm::normalize(glm::vec3(rotation * glm::vec4(camera.forward, 0.0f)));
-			}
-		}
-
-#pragma endregion
+		guiSystem.NextFrame();
+		UpdateCamera(camera);
 
 		static float time = 0.0f;
-		time += io.DeltaTime;
+		time += ImGui::GetIO().DeltaTime;
 
 		static bool show_demo_window = true;
 		ImGui::ShowDemoWindow(&show_demo_window);
@@ -409,22 +363,20 @@ void Framework::Application::Run()
 					}
 				}
 			}
-
 			drawList.PopClipRect();
 		}
 #pragma endregion
 
 #pragma region Render State
-		basicRenderPipeline.Execute(vulkanContext, windowViewport, camera, io.DeltaTime);
+		basicRenderPipeline.Execute(vulkanContext, windowViewport, camera, ImGui::GetIO().DeltaTime);
 #pragma endregion
 	}
-
+#pragma region Cleanup
 	vulkanContext.WaitIdle();
-	ImGui_ImplVulkan_Shutdown();
-	ImGui_ImplSDL3_Shutdown();
-	ImGui::DestroyContext();
+	guiSystem.Deinitialize();
 	basicRenderPipeline.Deinitialize(vulkanContext);
 	vulkanContext.Deinitialize();
 	SDL_DestroyWindow(window);
 	SDL_Quit();
+#pragma endregion
 }

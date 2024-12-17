@@ -16,3 +16,17 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
+
+#include "VulkanRHI.hpp"
+#include "RenderPasses.hpp"
+
+namespace Framework
+{
+    struct GuiSystem
+	{
+	    void Initialize(const Graphics::VulkanContext& context, SDL_Window* window, const Graphics::ImGuiPass& imGuiPass);
+        void Deinitialize();
+
+        void NextFrame();
+    };
+}
