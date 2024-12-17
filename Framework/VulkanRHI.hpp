@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <filesystem>
+#include <string_view>
 #include <vector>
 
 #include "Core.hpp"
@@ -55,6 +56,71 @@ namespace Framework
 			const char* debugName = "";
 		};
 
+		enum class Format
+		{
+			none,
+			d32f,
+			rgba8unorm
+		};
+
+		inline VkFormat mapFormat(Format format)
+		{
+			switch (format)
+			{
+			case Format::none:
+				return VK_FORMAT_UNDEFINED;
+			case Format::rgba8unorm:
+				return VK_FORMAT_R8G8B8A8_UNORM;
+			case Format::d32f:
+				return VK_FORMAT_D32_SFLOAT;
+			}
+			return VK_FORMAT_UNDEFINED;
+		}
+
+		struct GraphicsPipeline
+		{
+			VkPipeline pipeline;
+		};
+
+		struct PipelineLayout
+		{
+			VkPipelineLayout layout;
+		};
+
+		enum class FaceCullingMode
+		{
+			none,
+			clockwise,
+			conterClockwise
+		};
+
+		enum class BlendMode
+		{
+			none,
+			alphaBlend,
+			additive,
+			opaque
+		};
+
+		struct PipelineState
+		{
+			bool enableDepthTest{ false };
+			FaceCullingMode faceCullingMode{ FaceCullingMode::none };
+			BlendMode blendMode{ BlendMode::none };
+		};
+
+		struct GraphicsPipelineDesc
+		{
+			std::string_view vertexShader;
+			std::string_view fragmentShader;
+			std::array<Format, 8> renderTargets{ Format::none, Format::none, Format::none, Format::none,
+												 Format::none, Format::none, Format::none, Format::none };
+			Format depthRenderTarget{ Format::none };
+			PipelineState state{};
+			PipelineLayout pipelineLayout{};
+			const char* debugName = "";
+		};
+
 		struct VulkanContext
 		{
 			VkInstance instance;
@@ -96,7 +162,13 @@ namespace Framework
 			void DestroyBuffer(const GraphicsBuffer& buffer) const;
 
 			VkShaderModule ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path) const;
-			VkShaderModule ShaderModuleFromText(Utils::ShaderStage stage, const std::string& text) const;
+			VkShaderModule ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader) const;
+
+			std::string LoadShaderFileAsText(const std::filesystem::path& path) const;
+
+
+			GraphicsPipeline CreateGraphicsPipeline(const GraphicsPipelineDesc&& desc) const;
+			void DestroyGraphicsPipeline(const GraphicsPipeline& pipeline) const;
 
 			void RecreateSwapchain(const WindowViewport& windowViewport);
 			void ReleaseSwapchainResources();

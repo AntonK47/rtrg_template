@@ -1,21 +1,8 @@
 #include "Application.hpp"
 
-#include <array>
-#include <cassert>
-#include <filesystem>
-#include <format>
-#include <fstream>
-#include <queue>
-#include <regex>
-#include <string_view>
-#include <tuple>
-#include <vector>
-
 #include "Animation.hpp"
 #include "BasicRenderPipeline.hpp"
 #include "ImGuiUtils.hpp"
-#include "Math.hpp"
-#include "MeshImporter.hpp"
 #include "MiniAssetImporterEditor.hpp"
 #include "SDL3Utils.hpp"
 #include "VulkanRHI.hpp"
@@ -256,7 +243,7 @@ void Framework::Application::Run()
 					basicRenderPipeline.basicGeometryPass.CompileOpaqueMaterialPsoOnly(vulkanContext, myNewMaterial);
 
 				vulkanContext.WaitIdle();
-				vkDestroyPipeline(vulkanContext.device, basicRenderPipeline.basicGeometryPass.psoCache[i], nullptr);
+				vulkanContext.DestroyGraphicsPipeline(basicRenderPipeline.basicGeometryPass.psoCache[i]);
 
 				basicRenderPipeline.basicGeometryPass.psoCache[i] = pso;
 			}
