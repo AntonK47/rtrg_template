@@ -82,13 +82,35 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
 								static_cast<uint32_t>(descriptorSets.size()), descriptorSets.data(), 0, nullptr);
 
-		for (auto i = 0; i < scene.meshes.size(); i++)
+		for (auto l = 0; l < 10; l++)
 		{
-			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[i % psoCache.size()]);
-			auto& mesh = scene.meshes[i];
-			vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
-			// break;
+			for (auto k = 0; k < 10; k++)
+			{
+				for (auto m = 0; m < 10; m++)
+				{
+					auto model = glm::translate(
+						glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+						Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
+
+					constantsData.model = model;
+					vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 32, sizeof(ConstantsData),
+									   &constantsData);
+					for (auto i = 0; i < scene.meshes.size(); i++)
+					{
+						vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[i % psoCache.size()]);
+						auto& mesh = scene.meshes[i];
+						vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
+					}
+				}
+			}
 		}
+
+		//for (auto i = 0; i < scene.meshes.size(); i++)
+		//{
+		//	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[i % psoCache.size()]);
+		//	auto& mesh = scene.meshes[i];
+		//	vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
+		//}
 		// vkCmdDraw(cmd, 100000, 1, 0, 0);
 	}
 	vkCmdEndRendering(cmd);
@@ -662,8 +684,7 @@ void Framework::Graphics::FullscreenQuadPass::Execute(const VkCommandBuffer& cmd
 		ShaderToyConstant constants = { time, static_cast<float>(windowViewport.width),
 										static_cast<float>(windowViewport.height) };
 
-		vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-						   sizeof(ShaderToyConstant), &constants);
+		vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ShaderToyConstant), &constants);
 
 		vkCmdDraw(cmd, 3, 1, 0, 0);
 	}
