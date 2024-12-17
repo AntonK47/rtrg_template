@@ -1,6 +1,9 @@
 #version 460
 #extension GL_EXT_scalar_block_layout : enable
 
+#extension GL_GOOGLE_include_directive : require
+#include "Common/Skinning.Library.glsl"
+
 layout(location = 0) out vec2 uv;
 layout(location = 1) out vec3 normal;
 layout(location = 2) out vec3 positionWS;
@@ -87,16 +90,12 @@ void main()
 	vec3 position = vertex.position;
 	uv = vertex.uv0;
 
-	uint jointIndicies = vertex.jointIndicies;
-	uint i0 = jointIndicies & 255;
-	uint i1 = (jointIndicies >> 8) & 255;
-	uint i2 = (jointIndicies >> 16) & 255;
-	uint i3 = (jointIndicies >> 24) & 255;
+	ivec4 jointIndicies = decodeJointIndicies(vertex.jointIndicies);
 
 	vec4 jointWeights = vertex.jointWeights;
 
-	mat4 skinning = jointMatricies[int(i0)] * jointWeights.x 
-		+ jointMatricies[int(i1)] * jointWeights.y + jointMatricies[int(i2)] * jointWeights.z + jointMatricies[int(i3)] * jointWeights.w;
+	mat4 skinning = jointMatricies[jointIndicies.x] * jointWeights.x 
+		+ jointMatricies[jointIndicies.y] * jointWeights.y + jointMatricies[jointIndicies.z] * jointWeights.z + jointMatricies[jointIndicies.w] * jointWeights.w;
 
 	positionWS = vec3(constants.model * skinning * vec4(position, 1.0f));
 

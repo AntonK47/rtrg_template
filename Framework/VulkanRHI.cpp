@@ -1,6 +1,12 @@
 #include "VulkanRHI.hpp"
 #include <fstream>
 #include "SDL3Utils.hpp"
+#include "Core.hpp"
+
+#ifdef WIN32
+#define NOMINMAX
+#include <Windows.h>
+#endif
 
 using namespace Framework::Graphics;
 
@@ -527,8 +533,18 @@ VkShaderModule VulkanContext::ShaderModuleFromFile(Utils::ShaderStage stage, con
 
 	const auto shaderInfo = Utils::ShaderInfo{ "main", {}, stage, Utils::GlslShaderCode{ shader } };
 
+	auto compiler = Utils::ShaderCompiler{ Utils::CompilerOptions{ .optimize = false,
+																   .stripDebugInfo = false,
+																   .includePath = "Assets/Shaders/",
+																   .logCallback = [](const char* message)
+																   {
+#ifdef WIN32
+																	   OutputDebugString(runtime_format("[Shader Compiler]: {}\n", message).c_str());
+#endif
+																   } } };
+
 	Utils::ShaderByteCode code;
-	const auto compilationResult = Utils::CompileToSpirv(shaderInfo, code);
+	const auto compilationResult = compiler.CompileToSpirv(shaderInfo, code);
 	assert(compilationResult == Utils::CompilationResult::Success);
 
 	const auto shaderCreateInfo = VkShaderModuleCreateInfo{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -653,7 +669,7 @@ void VulkanContext::CreateSwapchain(const WindowViewport& windowViewport)
 								  .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 								  .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
 								  .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-								  .presentMode = VK_PRESENT_MODE_FIFO_KHR,// VK_PRESENT_MODE_IMMEDIATE_KHR,
+								  .presentMode = VK_PRESENT_MODE_FIFO_KHR, // VK_PRESENT_MODE_IMMEDIATE_KHR,
 								  .clipped = VK_FALSE,
 								  .oldSwapchain = VK_NULL_HANDLE };
 
