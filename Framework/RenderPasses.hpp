@@ -39,6 +39,7 @@ namespace Framework
 			VmaAllocation depthImageAllocation{VK_NULL_HANDLE};
 			Format depthFormat{ Format::d32f };
 
+			const VulkanContext* vulkanContext;
 
 			std::vector<GraphicsPipeline> psoCache{};
 
@@ -64,6 +65,8 @@ namespace Framework
 			PipelineLayout pipelineLayout{};
 			Float time{ 0 };
 
+			const VulkanContext* vulkanContext;
+
 			void Execute(const VkCommandBuffer& cmd, VkImageView colorTarget, const WindowViewport windowViewport,
 						 Float deltaTime);
 
@@ -73,6 +76,8 @@ namespace Framework
 		struct ImGuiPass
 		{
 			VkDescriptorPool descriptorPool{};
+
+			const VulkanContext* vulkanContext;
 
 			void Execute(const VkCommandBuffer& cmd, VkImageView colorTarget, const WindowViewport windowViewport,
 						 Float deltaTime);

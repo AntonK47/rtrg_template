@@ -7,6 +7,7 @@
 #include "SDL3Utils.hpp"
 #include "VulkanRHI.hpp"
 
+
 using namespace Framework;
 using namespace Framework::Animation;
 using namespace Framework::Graphics;
@@ -135,10 +136,13 @@ void Framework::Application::Run()
 
 	// scene.Upload("Assets/Meshes/aaron/source/Aaron/SK_Aaron.gltf", vulkanContext);
 	basicRenderPipeline.GetScene().Upload("Assets/Meshes/mr._otto_the_taxidermist/scene.gltf", vulkanContext);
-	// scene.Upload("Assets/Meshes/Knight_USD_002.fbx", vulkanContext);
-	// scene.Upload("Assets/Meshes/leslie_kornwell/scene.gltf", vulkanContext);
-	// scene.Upload("Assets/Meshes/the_last_stronghold_animated/scene.gltf", vulkanContext);
-	// scene.Upload("Assets/Meshes/CesiumMan.glb", vulkanContext);
+	/*basicRenderPipeline.GetScene().Upload("Assets/Meshes/knight-artorias-red-dark-souls-remastered/source/artorias-red.glb",
+	 * vulkanContext);*/
+	// basicRenderPipeline.GetScene().Upload("Assets/Meshes/godzilla/source/gojira.glb", vulkanContext);
+	//  scene.Upload("Assets/Meshes/Knight_USD_002.fbx", vulkanContext);
+	//  scene.Upload("Assets/Meshes/leslie_kornwell/scene.gltf", vulkanContext);
+	//  scene.Upload("Assets/Meshes/the_last_stronghold_animated/scene.gltf", vulkanContext);
+	//  scene.Upload("Assets/Meshes/CesiumMan.glb", vulkanContext);
 	/*const auto myStaticMesh = scene.Upload("Assets/Meshes/bunny.obj", vulkanContext);*/
 #pragma endregion
 
@@ -166,6 +170,8 @@ void Framework::Application::Run()
 	auto assetImporterEditor = Editor::AssetImporterEditor{};
 	while (shouldRun)
 	{
+		// FrameMarkStart("Frame");
+		ZoneNamed(Zone1, true);
 #pragma region Handle window events
 		SDL_Event event;
 		while (SDL_PollEvent(&event))
@@ -357,6 +363,9 @@ void Framework::Application::Run()
 #pragma region Render State
 		basicRenderPipeline.Execute(vulkanContext, windowViewport, camera, ImGui::GetIO().DeltaTime);
 #pragma endregion
+
+		// FrameMarkEnd("Frame");
+		FrameMark;
 	}
 #pragma region Cleanup
 	vulkanContext.WaitIdle();

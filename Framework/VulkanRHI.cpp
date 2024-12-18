@@ -32,7 +32,6 @@ namespace
 		return allocationInfo;
 	}
 
-	
 
 	bool shouldMapMemory(const MemoryUsage memoryUsage)
 	{
@@ -81,6 +80,7 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 #endif
 		instanceExtensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
 		instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		
 
 		const auto applicationInfo = VkApplicationInfo{ .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 														.pNext = nullptr,
@@ -229,8 +229,7 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 
 #pragma region Device creation
 	{
-		const auto enabledDeviceExtensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-
+		const auto enabledDeviceExtensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME };
 
 		const auto queuePriority = 1.0f;
 		const auto queueCreateInfos =
@@ -257,6 +256,7 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 		physicalDeviceFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 		physicalDeviceFeatures12.pNext = &physicalDeviceFeatures13;
 		physicalDeviceFeatures12.scalarBlockLayout = VK_TRUE;
+		physicalDeviceFeatures12.hostQueryReset = VK_TRUE;
 
 		auto physicalDeviceFeatures11 = VkPhysicalDeviceVulkan11Features{};
 		physicalDeviceFeatures11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
@@ -421,12 +421,15 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 		vkGetDeviceQueue2(device, &deviceQueueInfo, &transferQueue);
 	}
 #pragma endregion
+
+	tracyVulkanContext = TracyVkContextHostCalibrated(physicalDevice, device, vkResetQueryPool, vkGetPhysicalDeviceCalibrateableTimeDomainsKHR, vkGetCalibratedTimestampsKHR);
 }
 
 void Framework::Graphics::VulkanContext::Deinitialize()
 {
 	vmaDestroyAllocator(allocator);
 
+	TracyVkDestroy(tracyVulkanContext);
 	{
 		ReleaseSwapchainResources();
 
@@ -856,7 +859,7 @@ void VulkanContext::CreateSwapchain(const WindowViewport& windowViewport)
 								  .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 								  .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
 								  .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-								  .presentMode = VK_PRESENT_MODE_FIFO_KHR, // VK_PRESENT_MODE_IMMEDIATE_KHR,
+								  .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR, // VK_PRESENT_MODE_FIFO_KHR,
 								  .clipped = VK_FALSE,
 								  .oldSwapchain = VK_NULL_HANDLE };
 

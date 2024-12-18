@@ -8,6 +8,7 @@ find_package(SDL3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(stduuid CONFIG REQUIRED)
 find_package(unofficial-imgui-node-editor CONFIG REQUIRED)
+find_package(Tracy CONFIG REQUIRED)
 
 set(FRAMEWORK_NAME TemplateFramework)
 
@@ -69,6 +70,9 @@ PRIVATE
 	nlohmann_json::nlohmann_json
 	stduuid
 	unofficial::imgui-node-editor::imgui-node-editor
+	Tracy::TracyClient
 )
 
 target_compile_definitions(${FRAMEWORK_NAME} PUBLIC UUID_SYSTEM_GENERATOR)
+target_compile_definitions(${FRAMEWORK_NAME} PUBLIC TRACY_ENABLE)
+target_compile_definitions(${FRAMEWORK_NAME} PUBLIC TRACY_NO_SAMPLING)

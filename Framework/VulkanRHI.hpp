@@ -11,6 +11,10 @@
 #include "Utils.hpp"
 #include "VmaUtils.hpp"
 
+#define TRACY_NO_SAMPLING
+#include <tracy/Tracy.hpp>
+#include <tracy/TracyVulkan.hpp>
+
 namespace Framework
 {
 	namespace Graphics
@@ -147,6 +151,7 @@ namespace Framework
 			uint32_t frameResourceCount{};
 			std::vector<PerFrameResource> perFrameResources{};
 
+			TracyVkCtx tracyVulkanContext;
 		public:
 			void Initialize(std::string_view applicationName, SDL_Window* window, const WindowViewport& windowViewport);
 

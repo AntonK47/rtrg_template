@@ -1,5 +1,9 @@
 #include "BasicRenderPipeline.hpp"
 
+#define TRACY_NO_SAMPLING
+#include <tracy/Tracy.hpp>
+#include <tracy/TracyVulkan.hpp>
+
 namespace
 {
 	const char* sample_surface_01 =
@@ -155,6 +159,9 @@ void Framework::Graphics::BasicRenderPipeline::Execute(const VulkanContext& cont
 	context.BeginDebugLabelName(cmd, "GUI Rendering", DebugColorPalette::Blue);
 	imGuiPass.Execute(cmd, context.swapchainImageViews[imageIndex], windowViewport, deltaTime);
 	context.EndDebugLabelName(cmd);
+
+
+	 TracyVkCollect(context.tracyVulkanContext, cmd);
 
 #pragma endregion
 

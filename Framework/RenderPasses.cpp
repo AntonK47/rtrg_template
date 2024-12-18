@@ -4,6 +4,9 @@
 #include <regex>
 
 #include "ImGuiUtils.hpp"
+#define TRACY_NO_SAMPLING
+#include <tracy/Tracy.hpp>
+#include <tracy/TracyVulkan.hpp>
 
 using namespace Framework;
 using namespace Framework::Graphics;
@@ -12,6 +15,8 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 								const FrameData::PerFrameResources& frame, const Camera& camera,
 								const WindowViewport windowViewport, Float deltaTime)
 {
+	ZoneNamedNS(__tracy, "BasicGeometryPass::Execute", 30, true);
+	TracyVkZone(vulkanContext->tracyVulkanContext, cmd, "BasicGeometryPass");
 	const auto colorAttachment = VkRenderingAttachmentInfo{ .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
 															.pNext = nullptr,
 															.imageView = colorTarget,
@@ -50,8 +55,6 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 
 	ConstantsData constantsData = ConstantsData{};
 
-	auto model = glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	constantsData.model = model;
 	const auto aspectRatio = static_cast<float>(windowViewport.width) / static_cast<float>(windowViewport.height);
 	const auto projection = glm::perspective(glm::radians(60.0f), aspectRatio, 0.001f, 100.0f);
 	const auto view = glm::lookAt(camera.position, camera.position + camera.forward, camera.up);
@@ -74,8 +77,6 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 
 		vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ShaderToyConstant),
 						   &constants);
-		vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32, sizeof(ConstantsData),
-						   &constantsData);
 
 
 		const auto descriptorSets = std::array{ scene.geometryDescriptorSet, frame.jointsMatricesDescriptorSet };
@@ -84,22 +85,99 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout.layout, 0,
 								static_cast<uint32_t>(descriptorSets.size()), descriptorSets.data(), 0, nullptr);
 
-		for (auto l = 0; l < 10; l++)
+		const auto gridSize = 10;
+		
+		//for (auto l = 0; l < gridSize; l++)
+		//{
+		//	for (auto k = 0; k < gridSize; k++)
+		//	{
+		//		for (auto m = 0; m < gridSize; m++)
+		//		{
+		//			auto model = glm::translate(
+		//				glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+		//				Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
+		//			// model = glm::scale(model, glm::vec3(0.01f, 0.01f, 0.01f));
+
+		//			constantsData.model = model;
+		//			vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
+		//							   sizeof(ConstantsData), &constantsData);
+		//			for (auto i = 0; i < scene.meshes.size(); i++)
+		//			{
+		//				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[i % psoCache.size()].pipeline);
+		//				auto& mesh = scene.meshes[i];
+		//				vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
+		//			}
+		//		}
+		//	}
+		//}
+
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[0].pipeline);
+		for (auto l = 0; l < gridSize; l++)
 		{
-			for (auto k = 0; k < 10; k++)
+			for (auto k = 0; k < gridSize; k++)
 			{
-				for (auto m = 0; m < 10; m++)
+				for (auto m = 0; m < gridSize; m++)
 				{
 					auto model = glm::translate(
 						glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
 						Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
+					// model = glm::scale(model, glm::vec3(0.01f, 0.01f, 0.01f));
 
 					constantsData.model = model;
 					vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
 									   sizeof(ConstantsData), &constantsData);
-					for (auto i = 0; i < scene.meshes.size(); i++)
+					for (auto i = 0; i < scene.meshes.size(); i+=3)
 					{
-						vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[i % psoCache.size()].pipeline);
+						auto& mesh = scene.meshes[i];
+						vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
+					}
+				}
+			}
+		}
+
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[1].pipeline);
+
+		for (auto l = 0; l < gridSize; l++)
+		{
+			for (auto k = 0; k < gridSize; k++)
+			{
+				for (auto m = 0; m < gridSize; m++)
+				{
+					auto model = glm::translate(
+						glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+						Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
+					// model = glm::scale(model, glm::vec3(0.01f, 0.01f, 0.01f));
+
+					constantsData.model = model;
+					vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
+									   sizeof(ConstantsData), &constantsData);
+					for (auto i = 1; i < scene.meshes.size(); i+=3)
+					{
+						auto& mesh = scene.meshes[i];
+						vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
+					}
+				}
+			}
+		}
+
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[2].pipeline);
+
+		for (auto l = 0; l < gridSize; l++)
+		{
+			for (auto k = 0; k < gridSize; k++)
+			{
+				for (auto m = 0; m < gridSize; m++)
+				{
+					auto model = glm::translate(
+						glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+						Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
+					// model = glm::scale(model, glm::vec3(0.01f, 0.01f, 0.01f));
+
+					constantsData.model = model;
+					vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
+									   sizeof(ConstantsData), &constantsData);
+					for (auto i = 2; i < scene.meshes.size(); i+=3)
+					{
 						auto& mesh = scene.meshes[i];
 						vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
 					}
@@ -208,6 +286,7 @@ GraphicsPipeline BasicGeometryPass::CompileOpaqueMaterialPsoOnly(const VulkanCon
 void BasicGeometryPass::CreateResources(const VulkanContext& context, Scene& scene, FrameData& frameData,
 										const WindowViewport& windowViewport)
 {
+	vulkanContext = &context;
 	{
 		const auto pushConstants = std::array{
 			VkPushConstantRange{
@@ -261,6 +340,8 @@ void BasicGeometryPass::ReleaseResources(const VulkanContext& context)
 void Framework::Graphics::FullscreenQuadPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTarget,
 													  const WindowViewport windowViewport, Float deltaTime)
 {
+	ZoneNamedNS(__tracy, "FullscreenQuadPass::Execute", 30, true);
+	TracyVkZone(vulkanContext->tracyVulkanContext, cmd, "FullscreenQuadPass");
 
 	const auto colorAttachment = VkRenderingAttachmentInfo{ .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
 															.pNext = nullptr,
@@ -310,6 +391,7 @@ void Framework::Graphics::FullscreenQuadPass::Execute(const VkCommandBuffer& cmd
 
 void FullscreenQuadPass::CreateResources(const VulkanContext& context)
 {
+	vulkanContext = &context;
 	const auto pushConstantRange = VkPushConstantRange{ .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 														.offset = 0,
 														.size = sizeof(ShaderToyConstant) };
@@ -349,6 +431,8 @@ void FullscreenQuadPass::ReleaseResources(const VulkanContext& context)
 void Framework::Graphics::ImGuiPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTarget,
 											 const WindowViewport windowViewport, Float deltaTime)
 {
+	ZoneNamedNS(__tracy, "ImGuiPass::Execute", 30, true);
+	TracyVkZone(vulkanContext->tracyVulkanContext, cmd, "ImGuiPass");
 	ImGui::Render();
 	ImDrawData* drawData = ImGui::GetDrawData();
 
@@ -382,6 +466,7 @@ void Framework::Graphics::ImGuiPass::Execute(const VkCommandBuffer& cmd, VkImage
 
 void ImGuiPass::CreateResources(const VulkanContext& context)
 {
+	vulkanContext = &context;
 	const auto poolSizes =
 		std::array{ VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1 } };
 	VkDescriptorPoolCreateInfo poolInfo = {};
