@@ -7,12 +7,11 @@
 #include "Core.hpp"
 #include "VolkUtils.hpp"
 
+#include "Profiler.hpp"
 #include "SDL3Utils.hpp"
 #include "Utils.hpp"
 #include "VmaUtils.hpp"
 
-#define TRACY_NO_SAMPLING
-#include <tracy/Tracy.hpp>
 #include <tracy/TracyVulkan.hpp>
 
 namespace Framework
@@ -151,7 +150,11 @@ namespace Framework
 			uint32_t frameResourceCount{};
 			std::vector<PerFrameResource> perFrameResources{};
 
-			TracyVkCtx tracyVulkanContext;
+#ifdef RTRG_ENABLE_PROFILER
+			TracyVkCtx gpuProfilerContext;
+#endif
+			std::unique_ptr<Utils::ShaderCompiler> shaderCompiler; //TODO: only required for editor application
+
 		public:
 			void Initialize(std::string_view applicationName, SDL_Window* window, const WindowViewport& windowViewport);
 

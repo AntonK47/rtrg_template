@@ -4,7 +4,7 @@
 
 #include "Core.hpp"
 #include "Math.hpp"
-
+#include "Profiler.hpp"
 
 namespace Framework
 {
@@ -72,6 +72,7 @@ namespace Framework
 
 		inline std::vector<Math::Matrix4x4> ComputeJointsMatrices(const LocalPose& pose, const Skeleton& skeleton)
 		{
+			ZoneScoped;
 			assert(pose.data.size() > 0);
 			assert(pose.data.size() == skeleton.joints.size());
 
@@ -93,6 +94,7 @@ namespace Framework
 
 		inline void ApplyBindPose(std::vector<Math::Matrix4x4>& jointsMatrices, const Skeleton& skeleton)
 		{
+			ZoneScoped;
 			assert(jointsMatrices.size() > 0);
 			assert(jointsMatrices.size() == skeleton.joints.size());
 
@@ -104,6 +106,7 @@ namespace Framework
 
 		inline LocalPose BlendPose(const LocalPose& pose0, const LocalPose& pose1, Float blendFactor)
 		{
+			ZoneScoped;
 			assert(pose0.data.size() == pose1.data.size());
 
 			auto finalPose = LocalPose{};
@@ -120,6 +123,7 @@ namespace Framework
 
 		inline LocalPose SamplePose(const AnimationDataSet& animationDataSet, const AnimationData& data, Float time)
 		{
+			ZoneScoped;
 			auto pose = LocalPose{}; // normally this should be allocated outside of the function call
 			pose.data.resize(data.count);
 
@@ -162,6 +166,7 @@ namespace Framework
 		inline LocalPose SamplePose(const AnimationDataSet& animationDataSet, const AnimationInstance& instance,
 									Float globalTime)
 		{
+			ZoneScoped;
 			Float localTime = (globalTime - instance.startTime) * instance.playbackRate;
 
 			if (instance.loop)

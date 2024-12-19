@@ -57,9 +57,10 @@ namespace Framework
 			std::function<void(const char*)> logCallback;
 		};
 
-		struct ShaderCompiler
+		struct ShaderCompiler final
 		{
 			ShaderCompiler(CompilerOptions options);
+			~ShaderCompiler();
 
 			CompilationResult CompileToSpirv(const ShaderInfo& info, ShaderByteCode& byteCode);
 

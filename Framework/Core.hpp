@@ -4,21 +4,6 @@
 #include <assert.h>
 #include <format>
 
-#define TRACY_NO_SAMPLING
-#include <tracy/Tracy.hpp>
-
-inline void* operator new(std::size_t count)
-{
-	auto ptr = malloc(count);
-	TracyAllocS(ptr, count, 30);
-	return ptr;
-}
-inline void operator delete(void* ptr) noexcept
-{
-	TracyFreeS(ptr, 30);
-	free(ptr);
-}
-
 template <typename... Args>
 std::string runtime_format(std::string_view rt_fmt_str, Args&&... args)
 {

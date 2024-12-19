@@ -51,6 +51,9 @@ PRIVATE
 	Camera.hpp
 	FrameData.hpp
 	FrameData.cpp
+	Memory.hpp
+	Memory.cpp
+	Profiler.hpp
 	)
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)
@@ -74,5 +77,13 @@ PRIVATE
 )
 
 target_compile_definitions(${FRAMEWORK_NAME} PUBLIC UUID_SYSTEM_GENERATOR)
-target_compile_definitions(${FRAMEWORK_NAME} PUBLIC TRACY_ENABLE)
-target_compile_definitions(${FRAMEWORK_NAME} PUBLIC TRACY_NO_SAMPLING)
+
+
+if(${RTRG_ENABLE_PROFILER})
+	target_compile_definitions(${FRAMEWORK_NAME} PUBLIC RTRG_ENABLE_PROFILER RTRG_PROFILER_CALLSTACK_DEPTH=30 TRACY_IMPORTS)
+endif()
+
+
+if(${RTRG_ENABLE_GRAPHICS_VALIDATION})
+	target_compile_definitions(${FRAMEWORK_NAME} PUBLIC RTRG_ENABLE_GRAPHICS_VALIDATION)
+endif()

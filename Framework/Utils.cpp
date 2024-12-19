@@ -108,11 +108,17 @@ Utils::ShaderCompiler::ShaderCompiler(CompilerOptions options) : includePath{ op
 										  .validate = true,
 										  .emit_nonsemantic_shader_debug_info = not stripDebugInfo,
 										  .emit_nonsemantic_shader_debug_source = not stripDebugInfo };
+	glslang_initialize_process();
+}
+
+Framework::Utils::ShaderCompiler::~ShaderCompiler()
+{
+	glslang_finalize_process();
 }
 
 Utils::CompilationResult Utils::ShaderCompiler::CompileToSpirv(const ShaderInfo& info, ShaderByteCode& byteCode)
 {
-	glslang_initialize_process();
+	
 	const auto stage = static_cast<glslang_stage_t>(MapShaderStage(info.shaderStage));
 
 	const auto includeCallbacks = glsl_include_callbacks_t{ .include_system = &includeLocalAndSystem,
@@ -184,7 +190,7 @@ Utils::CompilationResult Utils::ShaderCompiler::CompileToSpirv(const ShaderInfo&
 	glslang_program_delete(program);
 	glslang_shader_delete(shader);
 
-	glslang_finalize_process();
+	
 	return Utils::CompilationResult::Success;
 }
 

@@ -416,7 +416,6 @@ AnimationDataSet AssetImporter::LoadAllAnimations(const Skeleton& skeleton, cons
 		const auto framesPerAnimation = (int)((resampleRate * durationInSeconds * 1001.0f) / 1000.0f);
 		const auto skeletonJointsCount = skeleton.joints.size();
 
-		// allocate
 		std::vector<JointAnimationData> animationData{};
 		animationData.resize(framesPerAnimation * skeletonJointsCount);
 		struct PositionSample

@@ -4,9 +4,8 @@
 #include <regex>
 
 #include "ImGuiUtils.hpp"
-#define TRACY_NO_SAMPLING
-#include <tracy/Tracy.hpp>
-#include <tracy/TracyVulkan.hpp>
+#include "Profiler.hpp"
+
 
 using namespace Framework;
 using namespace Framework::Graphics;
@@ -15,8 +14,8 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 								const FrameData::PerFrameResources& frame, const Camera& camera,
 								const WindowViewport windowViewport, Float deltaTime)
 {
-	ZoneNamedNS(__tracy, "BasicGeometryPass::Execute", 30, true);
-	TracyVkZone(vulkanContext->tracyVulkanContext, cmd, "BasicGeometryPass");
+	ZoneNamedNS(__tracy, "BasicGeometryPass::Execute", RTRG_PROFILER_CALLSTACK_DEPTH, true);
+	TracyVkZone(vulkanContext->gpuProfilerContext, cmd, "BasicGeometryPass");
 	const auto colorAttachment = VkRenderingAttachmentInfo{ .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
 															.pNext = nullptr,
 															.imageView = colorTarget,
@@ -86,112 +85,33 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 								static_cast<uint32_t>(descriptorSets.size()), descriptorSets.data(), 0, nullptr);
 
 		const auto gridSize = 10;
-		
-		//for (auto l = 0; l < gridSize; l++)
-		//{
-		//	for (auto k = 0; k < gridSize; k++)
-		//	{
-		//		for (auto m = 0; m < gridSize; m++)
-		//		{
-		//			auto model = glm::translate(
-		//				glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-		//				Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
-		//			// model = glm::scale(model, glm::vec3(0.01f, 0.01f, 0.01f));
 
-		//			constantsData.model = model;
-		//			vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
-		//							   sizeof(ConstantsData), &constantsData);
-		//			for (auto i = 0; i < scene.meshes.size(); i++)
-		//			{
-		//				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[i % psoCache.size()].pipeline);
-		//				auto& mesh = scene.meshes[i];
-		//				vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
-		//			}
-		//		}
-		//	}
-		//}
+		const auto modelRotation =
+			glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[0].pipeline);
-		for (auto l = 0; l < gridSize; l++)
+		for (auto psoIndex = 0; psoIndex < psoCache.size(); psoIndex++)
 		{
-			for (auto k = 0; k < gridSize; k++)
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[psoIndex].pipeline);
+			for (auto l = 0; l < gridSize; l++)
 			{
-				for (auto m = 0; m < gridSize; m++)
+				for (auto k = 0; k < gridSize; k++)
 				{
-					auto model = glm::translate(
-						glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-						Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
-					// model = glm::scale(model, glm::vec3(0.01f, 0.01f, 0.01f));
-
-					constantsData.model = model;
-					vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
-									   sizeof(ConstantsData), &constantsData);
-					for (auto i = 0; i < scene.meshes.size(); i+=3)
+					for (auto m = 0; m < gridSize; m++)
 					{
-						auto& mesh = scene.meshes[i];
-						vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
+						const auto model = glm::translate(modelRotation, Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
+
+						constantsData.model = model;
+						vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
+										   sizeof(ConstantsData), &constantsData);
+						for (auto i = psoIndex; i < scene.meshes.size(); i += 3)
+						{
+							auto& mesh = scene.meshes[i];
+							vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
+						}
 					}
 				}
 			}
 		}
-
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[1].pipeline);
-
-		for (auto l = 0; l < gridSize; l++)
-		{
-			for (auto k = 0; k < gridSize; k++)
-			{
-				for (auto m = 0; m < gridSize; m++)
-				{
-					auto model = glm::translate(
-						glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-						Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
-					// model = glm::scale(model, glm::vec3(0.01f, 0.01f, 0.01f));
-
-					constantsData.model = model;
-					vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
-									   sizeof(ConstantsData), &constantsData);
-					for (auto i = 1; i < scene.meshes.size(); i+=3)
-					{
-						auto& mesh = scene.meshes[i];
-						vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
-					}
-				}
-			}
-		}
-
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[2].pipeline);
-
-		for (auto l = 0; l < gridSize; l++)
-		{
-			for (auto k = 0; k < gridSize; k++)
-			{
-				for (auto m = 0; m < gridSize; m++)
-				{
-					auto model = glm::translate(
-						glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-						Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
-					// model = glm::scale(model, glm::vec3(0.01f, 0.01f, 0.01f));
-
-					constantsData.model = model;
-					vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
-									   sizeof(ConstantsData), &constantsData);
-					for (auto i = 2; i < scene.meshes.size(); i+=3)
-					{
-						auto& mesh = scene.meshes[i];
-						vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
-					}
-				}
-			}
-		}
-
-		// for (auto i = 0; i < scene.meshes.size(); i++)
-		//{
-		//	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, psoCache[i % psoCache.size()]);
-		//	auto& mesh = scene.meshes[i];
-		//	vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
-		// }
-		//  vkCmdDraw(cmd, 100000, 1, 0, 0);
 	}
 	vkCmdEndRendering(cmd);
 }
@@ -340,8 +260,8 @@ void BasicGeometryPass::ReleaseResources(const VulkanContext& context)
 void Framework::Graphics::FullscreenQuadPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTarget,
 													  const WindowViewport windowViewport, Float deltaTime)
 {
-	ZoneNamedNS(__tracy, "FullscreenQuadPass::Execute", 30, true);
-	TracyVkZone(vulkanContext->tracyVulkanContext, cmd, "FullscreenQuadPass");
+	ZoneNamedNS(__tracy, "FullscreenQuadPass::Execute", RTRG_PROFILER_CALLSTACK_DEPTH, true);
+	TracyVkZone(vulkanContext->gpuProfilerContext, cmd, "FullscreenQuadPass");
 
 	const auto colorAttachment = VkRenderingAttachmentInfo{ .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
 															.pNext = nullptr,
@@ -431,8 +351,8 @@ void FullscreenQuadPass::ReleaseResources(const VulkanContext& context)
 void Framework::Graphics::ImGuiPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTarget,
 											 const WindowViewport windowViewport, Float deltaTime)
 {
-	ZoneNamedNS(__tracy, "ImGuiPass::Execute", 30, true);
-	TracyVkZone(vulkanContext->tracyVulkanContext, cmd, "ImGuiPass");
+	ZoneNamedNS(__tracy, "ImGuiPass::Execute", RTRG_PROFILER_CALLSTACK_DEPTH, true);
+	TracyVkZone(vulkanContext->gpuProfilerContext, cmd, "ImGuiPass");
 	ImGui::Render();
 	ImDrawData* drawData = ImGui::GetDrawData();
 

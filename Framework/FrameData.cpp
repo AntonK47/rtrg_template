@@ -1,4 +1,5 @@
 #include "FrameData.hpp"
+#include "Profiler.hpp"
 
 using namespace Framework;
 using namespace Framework::Graphics;
@@ -82,6 +83,7 @@ void FrameData::ReleaseResources(const VulkanContext& context)
 
 void FrameData::UploadJointMatrices(const std::vector<Math::Matrix4x4>& jointMatrices)
 {
+	ZoneScoped;
 	const auto size = jointMatrices.size() * sizeof(Math::Matrix4x4);
 
 	if ((currentPtr + size) >= ((std::byte*)uniformBuffer.mappedPtr + uniformMemorySize))

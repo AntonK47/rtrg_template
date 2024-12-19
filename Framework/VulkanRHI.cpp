@@ -13,6 +13,20 @@ using namespace Framework::Graphics;
 
 namespace
 {
+	const char* const gpuMemoryPoolName = "GPU Memory Pool";
+
+	void vmaAllocateCallback(VmaAllocator allocator, uint32_t memoryType, VkDeviceMemory memory, VkDeviceSize size,
+							 void* pUserData)
+	{
+		TracyAllocNS((void*)memory, size, RTRG_PROFILER_CALLSTACK_DEPTH, gpuMemoryPoolName);
+	}
+
+	void vmaFreeCallback(VmaAllocator allocator, uint32_t memoryType, VkDeviceMemory memory, VkDeviceSize size,
+						 void* pUserData)
+	{
+		TracyFreeNS((void*)memory, RTRG_PROFILER_CALLSTACK_DEPTH, gpuMemoryPoolName);
+	}
+
 	VmaAllocationCreateInfo mapMemoryUsageToAllocationInfo(const MemoryUsage memoryUsage)
 	{
 		auto allocationInfo = VmaAllocationCreateInfo{};
@@ -75,12 +89,12 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 
 	{
 		auto instanceLayers = std::vector<const char*>{};
-#ifndef NDEBUG
+#ifdef RTRG_ENABLE_GRAPHICS_VALIDATION
 		instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
 		instanceExtensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
 		instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-		
+
 
 		const auto applicationInfo = VkApplicationInfo{ .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 														.pNext = nullptr,
@@ -229,7 +243,12 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 
 #pragma region Device creation
 	{
-		const auto enabledDeviceExtensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME };
+		const auto enabledDeviceExtensions =
+			std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+#ifdef RTRG_ENABLE_PROFILER
+						VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
+#endif
+			};
 
 		const auto queuePriority = 1.0f;
 		const auto queueCreateInfos =
@@ -256,8 +275,11 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 		physicalDeviceFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 		physicalDeviceFeatures12.pNext = &physicalDeviceFeatures13;
 		physicalDeviceFeatures12.scalarBlockLayout = VK_TRUE;
+#ifdef RTRG_ENABLE_PROFILER
 		physicalDeviceFeatures12.hostQueryReset = VK_TRUE;
-
+#else
+		physicalDeviceFeatures12.hostQueryReset = VK_FALSE;
+#endif
 		auto physicalDeviceFeatures11 = VkPhysicalDeviceVulkan11Features{};
 		physicalDeviceFeatures11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
 		physicalDeviceFeatures11.pNext = &physicalDeviceFeatures12;
@@ -313,9 +335,16 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 								.vkGetDeviceImageMemoryRequirements = vkGetDeviceImageMemoryRequirements };
 
 
+		const auto deviceMemoryCallbacks = VmaDeviceMemoryCallbacks{ .pfnAllocate = vmaAllocateCallback,
+																	 .pfnFree = vmaFreeCallback,
+																	 .pUserData = nullptr };
+
 		const auto allocatorCreateInfo = VmaAllocatorCreateInfo{ .flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT,
 																 .physicalDevice = physicalDevice,
 																 .device = device,
+#ifdef RTRG_ENABLE_PROFILER
+																 .pDeviceMemoryCallbacks = &deviceMemoryCallbacks,
+#endif
 																 .pVulkanFunctions = &vulkanFunctions,
 																 .instance = instance,
 																 .vulkanApiVersion = VK_API_VERSION_1_3 };
@@ -422,14 +451,31 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 	}
 #pragma endregion
 
-	tracyVulkanContext = TracyVkContextHostCalibrated(physicalDevice, device, vkResetQueryPool, vkGetPhysicalDeviceCalibrateableTimeDomainsKHR, vkGetCalibratedTimestampsKHR);
+#ifdef RTRG_ENABLE_PROFILER
+	gpuProfilerContext =
+		TracyVkContextHostCalibrated(physicalDevice, device, vkResetQueryPool,
+									 vkGetPhysicalDeviceCalibrateableTimeDomainsKHR, vkGetCalibratedTimestampsKHR);
+	TracyVkContextName(gpuProfilerContext, "GPU Graphics Workload", 21);
+#endif
+
+	shaderCompiler = std::make_unique<Utils::ShaderCompiler>(
+		Utils::CompilerOptions{ .optimize = false,
+								.stripDebugInfo = false,
+								.includePath = "Assets/Shaders/",
+								.logCallback = [](const char* message)
+								{
+#ifdef WIN32
+									OutputDebugString(runtime_format("[Shader Compiler]: {}\n", message).c_str());
+#endif
+								} });
 }
 
 void Framework::Graphics::VulkanContext::Deinitialize()
 {
 	vmaDestroyAllocator(allocator);
-
-	TracyVkDestroy(tracyVulkanContext);
+#ifdef RTRG_ENABLE_PROFILER
+	TracyVkDestroy(gpuProfilerContext);
+#endif
 	{
 		ReleaseSwapchainResources();
 
@@ -538,19 +584,8 @@ VkShaderModule VulkanContext::ShaderModuleFromText(Utils::ShaderStage stage, std
 {
 	const auto shaderInfo = Utils::ShaderInfo{ "main", {}, stage, Utils::GlslShaderCode{ shader } };
 
-	auto compiler = Utils::ShaderCompiler{ Utils::CompilerOptions{
-		.optimize = false,
-		.stripDebugInfo = false,
-		.includePath = "Assets/Shaders/",
-		.logCallback = [](const char* message)
-		{
-#ifdef WIN32
-			OutputDebugString(runtime_format("[Shader Compiler]: {}\n", message).c_str());
-#endif
-		} } };
-
 	Utils::ShaderByteCode code;
-	const auto compilationResult = compiler.CompileToSpirv(shaderInfo, code);
+	const auto compilationResult = shaderCompiler->CompileToSpirv(shaderInfo, code);
 	assert(compilationResult == Utils::CompilationResult::Success);
 
 	const auto shaderCreateInfo = VkShaderModuleCreateInfo{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -859,7 +894,7 @@ void VulkanContext::CreateSwapchain(const WindowViewport& windowViewport)
 								  .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 								  .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
 								  .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-								  .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR, // VK_PRESENT_MODE_FIFO_KHR,
+								  .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR,//VK_PRESENT_MODE_FIFO_KHR, // VK_PRESENT_MODE_IMMEDIATE_KHR,
 								  .clipped = VK_FALSE,
 								  .oldSwapchain = VK_NULL_HANDLE };
 
