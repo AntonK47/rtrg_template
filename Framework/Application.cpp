@@ -134,21 +134,7 @@ void Framework::Application::Run()
 #pragma endregion
 
 #pragma region Scene preparation
-
-	// scene.Upload("Assets/Meshes/makarov-pm-fps-animations/source/Arms_Mak.fbx", vulkanContext);
-	// scene.Upload("Assets/Meshes/junkrat/source/animated_2.fbx", vulkanContext);
-	// scene.Upload("Assets/Meshes/mira/source/Mira2.fbx", vulkanContext);
-
-	// scene.Upload("Assets/Meshes/aaron/source/Aaron/SK_Aaron.gltf", vulkanContext);
-	basicRenderPipeline.GetScene().Upload("Assets/Meshes/mr._otto_the_taxidermist/scene.gltf", vulkanContext);
-	/*basicRenderPipeline.GetScene().Upload("Assets/Meshes/knight-artorias-red-dark-souls-remastered/source/artorias-red.glb",
-	 * vulkanContext);*/
-	// basicRenderPipeline.GetScene().Upload("Assets/Meshes/godzilla/source/gojira.glb", vulkanContext);
-	//  scene.Upload("Assets/Meshes/Knight_USD_002.fbx", vulkanContext);
-	//  scene.Upload("Assets/Meshes/leslie_kornwell/scene.gltf", vulkanContext);
-	//  scene.Upload("Assets/Meshes/the_last_stronghold_animated/scene.gltf", vulkanContext);
-	//  scene.Upload("Assets/Meshes/CesiumMan.glb", vulkanContext);
-	/*const auto myStaticMesh = scene.Upload("Assets/Meshes/bunny.obj", vulkanContext);*/
+	basicRenderPipeline.GetScene().Upload("Assets/Meshes/CesiumMan.glb", vulkanContext);
 #pragma endregion
 
 #pragma region Setup Camera
