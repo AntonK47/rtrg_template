@@ -143,6 +143,58 @@ namespace Framework
 
 				ImGui::End();
 			}
+			
+			/*struct Material
+			{
+				int materialIndex;
+			};
+
+			struct MeshData
+			{
+				int offset;
+			};
+
+			struct SubMesh
+			{
+				MeshData* meshData{nullptr};
+				Material* material{nullptr};
+			};
+
+			struct Mesh
+			{
+				std::vector<SubMesh*> subMeshes;
+			};
+
+			struct LodMesh
+			{
+				Float rangeBegin;
+				Float rangeEnd;
+
+				Mesh* mesh{nullptr};
+			};
+
+			struct Entity
+			{
+				Math::Matrix4x4 transform;
+			};
+
+			struct TypeReference
+			{
+			};
+
+			struct TypeReferenceArray
+			{
+			};
+
+			struct ExampleNode
+			{
+				
+			};
+			struct ComponentNode
+			{
+			};
+
+			std::vector<ComponentNode> components;*/
 		};
 	} // namespace Editor
 } // namespace Framework
