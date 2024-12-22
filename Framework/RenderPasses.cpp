@@ -188,18 +188,20 @@ GraphicsPipeline BasicGeometryPass::CompileOpaqueMaterialPsoOnly(const VulkanCon
 	auto fragmentShader = context.LoadShaderFileAsText("Assets/Shaders/BasicGeometry_Template.frag");
 	fragmentShader = std::regex_replace(fragmentShader, std::regex("%%material_evaluation_code%%"),
 										materialAsset.surfaceShadingCode);
+
+	const auto hash = std::hash<std::string>{}(fragmentShader);
 	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/BasicGeometry.vert");
 
-	const auto pipeline = context.CreateGraphicsPipeline(
-		GraphicsPipelineDesc{ .vertexShader = vertexShader,
-							  .fragmentShader = fragmentShader,
-							  .renderTargets = { Format::rgba8unorm },
-							  .depthRenderTarget = depthFormat,
-							  .state = PipelineState{ .enableDepthTest = true,
-													  .faceCullingMode = FaceCullingMode::conterClockwise,
-													  .blendMode = BlendMode::none },
-							  .pipelineLayout = pipelineLayout,
-							  .debugName = "Generated Geometry PSO" });
+	const auto pipeline = context.CreateGraphicsPipeline(GraphicsPipelineDesc{
+		.vertexShader = { std::string{ runtime_format("BasicGeometry.vert") }, vertexShader },
+		.fragmentShader = { std::string{ runtime_format("BasicGeometry.generated.{}.frag", hash) }, fragmentShader },
+		.renderTargets = { Format::rgba8unorm },
+		.depthRenderTarget = depthFormat,
+		.state = PipelineState{ .enableDepthTest = true,
+								.faceCullingMode = FaceCullingMode::conterClockwise,
+								.blendMode = BlendMode::none },
+		.pipelineLayout = pipelineLayout,
+		.debugName = "Generated Geometry PSO" });
 	return pipeline;
 }
 
@@ -232,8 +234,8 @@ void BasicGeometryPass::CreateResources(const VulkanContext& context, Scene& sce
 	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/BasicGeometry.vert");
 	const auto fragmentShader = context.LoadShaderFileAsText("Assets/Shaders/BasicGeometry.frag");
 	pipeline = context.CreateGraphicsPipeline(
-		GraphicsPipelineDesc{ .vertexShader = vertexShader,
-							  .fragmentShader = fragmentShader,
+		GraphicsPipelineDesc{ .vertexShader = { "BasicGeometry.vert", vertexShader },
+							  .fragmentShader = { "BasicGeometry.frag", fragmentShader },
 							  .renderTargets = { Format::rgba8unorm },
 							  .depthRenderTarget = depthFormat,
 							  .state = PipelineState{ .enableDepthTest = true,
@@ -331,8 +333,8 @@ void FullscreenQuadPass::CreateResources(const VulkanContext& context)
 	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/FullscreenQuad.vert");
 	const auto fragmentShader = context.LoadShaderFileAsText("Assets/Shaders/ShaderToySample.frag");
 	pipeline = context.CreateGraphicsPipeline(
-		GraphicsPipelineDesc{ .vertexShader = vertexShader,
-							  .fragmentShader = fragmentShader,
+		GraphicsPipelineDesc{ .vertexShader = { "FullscreenQuad.vert", vertexShader },
+							  .fragmentShader = { "ShaderToySample.frag", fragmentShader },
 							  .renderTargets = { Format::rgba8unorm },
 							  .depthRenderTarget = Format::none,
 							  .state = PipelineState{ .enableDepthTest = false,

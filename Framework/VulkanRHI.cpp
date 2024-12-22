@@ -577,12 +577,12 @@ VkShaderModule VulkanContext::ShaderModuleFromFile(Utils::ShaderStage stage, con
 {
 	const auto shader = LoadShaderFileAsText(path);
 
-	return ShaderModuleFromText(stage, shader);
+	return ShaderModuleFromText(stage, shader, path.filename().string());
 }
 
-VkShaderModule VulkanContext::ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader) const
+VkShaderModule VulkanContext::ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader, std::string_view name) const
 {
-	const auto shaderInfo = Utils::ShaderInfo{ "main", {}, stage, Utils::GlslShaderCode{ shader } };
+	const auto shaderInfo = Utils::ShaderInfo{ "main", {}, stage, Utils::GlslShaderCode{ shader }, true, std::string{name}};
 
 	Utils::ShaderByteCode code;
 	const auto compilationResult = shaderCompiler->CompileToSpirv(shaderInfo, code);
@@ -616,8 +616,8 @@ std::string Framework::Graphics::VulkanContext::LoadShaderFileAsText(const std::
 
 GraphicsPipeline VulkanContext::CreateGraphicsPipeline(const GraphicsPipelineDesc&& desc) const
 {
-	VkShaderModule fragmentShaderModule = ShaderModuleFromText(Utils::ShaderStage::Fragment, desc.fragmentShader);
-	VkShaderModule vertexShaderModule = ShaderModuleFromText(Utils::ShaderStage::Vertex, desc.vertexShader);
+	VkShaderModule fragmentShaderModule = ShaderModuleFromText(Utils::ShaderStage::Fragment, desc.fragmentShader.source, desc.fragmentShader.name);
+	VkShaderModule vertexShaderModule = ShaderModuleFromText(Utils::ShaderStage::Vertex, desc.vertexShader.source, desc.vertexShader.name);
 
 
 	const auto shaderStages =

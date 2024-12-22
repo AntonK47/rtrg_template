@@ -112,10 +112,16 @@ namespace Framework
 			BlendMode blendMode{ BlendMode::none };
 		};
 
+		struct ShaderSource
+		{
+			std::string_view name;
+			std::string_view source;
+		};
+
 		struct GraphicsPipelineDesc
 		{
-			std::string_view vertexShader;
-			std::string_view fragmentShader;
+			ShaderSource vertexShader;
+			ShaderSource fragmentShader;
 			std::array<Format, 8> renderTargets{ Format::none, Format::none, Format::none, Format::none,
 												 Format::none, Format::none, Format::none, Format::none };
 			Format depthRenderTarget{ Format::none };
@@ -170,7 +176,7 @@ namespace Framework
 			void DestroyBuffer(const GraphicsBuffer& buffer) const;
 
 			VkShaderModule ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path) const;
-			VkShaderModule ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader) const;
+			VkShaderModule ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader, std::string_view name) const;
 
 			std::string LoadShaderFileAsText(const std::filesystem::path& path) const;
 

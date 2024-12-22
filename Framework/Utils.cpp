@@ -95,7 +95,8 @@ namespace
 
 } // namespace
 
-Utils::ShaderCompiler::ShaderCompiler(CompilerOptions options) : includePath{ options.includePath }, logCallback{options.logCallback}
+Utils::ShaderCompiler::ShaderCompiler(CompilerOptions options)
+	: includePath{ options.includePath }, logCallback{ options.logCallback }
 {
 	const auto optimize = options.optimize;
 	const auto stripDebugInfo = options.stripDebugInfo;
@@ -106,8 +107,8 @@ Utils::ShaderCompiler::ShaderCompiler(CompilerOptions options) : includePath{ op
 										  .optimize_size = false,
 										  .disassemble = false,
 										  .validate = true,
-										  .emit_nonsemantic_shader_debug_info = not stripDebugInfo,
-										  .emit_nonsemantic_shader_debug_source = not stripDebugInfo };
+										  .emit_nonsemantic_shader_debug_info = false,
+										  .emit_nonsemantic_shader_debug_source = false }; //FIX: Nsight Graphics requires nonsematic for proper shader profiling, but by enabling this feater the shader will be shown incorrect in the debugger
 	glslang_initialize_process();
 }
 
@@ -118,12 +119,14 @@ Framework::Utils::ShaderCompiler::~ShaderCompiler()
 
 Utils::CompilationResult Utils::ShaderCompiler::CompileToSpirv(const ShaderInfo& info, ShaderByteCode& byteCode)
 {
-	
+
 	const auto stage = static_cast<glslang_stage_t>(MapShaderStage(info.shaderStage));
 
 	const auto includeCallbacks = glsl_include_callbacks_t{ .include_system = &includeLocalAndSystem,
 															.include_local = &includeLocalAndSystem,
 															.free_include_result = &freeInclude };
+
+	glslang_program_t* program = glslang_program_create();
 
 	const glslang_input_t input = { .language = GLSLANG_SOURCE_GLSL,
 									.stage = stage,
@@ -142,7 +145,6 @@ Utils::CompilationResult Utils::ShaderCompiler::CompileToSpirv(const ShaderInfo&
 									.callbacks_ctx = this };
 
 	glslang_shader_t* shader = glslang_shader_create(&input);
-
 	if (!glslang_shader_preprocess(shader, &input))
 	{
 		logCallback("GLSL preprocessing failed!");
@@ -163,7 +165,7 @@ Utils::CompilationResult Utils::ShaderCompiler::CompileToSpirv(const ShaderInfo&
 		return CompilationResult::Failed;
 	}
 
-	glslang_program_t* program = glslang_program_create();
+
 	glslang_program_add_shader(program, shader);
 
 	if (!glslang_program_link(program, GLSLANG_MSG_SPV_RULES_BIT | GLSLANG_MSG_VULKAN_RULES_BIT))
@@ -175,6 +177,8 @@ Utils::CompilationResult Utils::ShaderCompiler::CompileToSpirv(const ShaderInfo&
 		glslang_shader_delete(shader);
 		return CompilationResult::Failed;
 	}
+	glslang_program_add_source_text(program, stage, info.shaderCode.c_str(), info.shaderCode.size());
+	glslang_program_set_source_file(program, stage, info.name.c_str());
 
 
 	glslang_program_SPIRV_generate_with_options(program, stage, &spirvOptions);
@@ -190,7 +194,6 @@ Utils::CompilationResult Utils::ShaderCompiler::CompileToSpirv(const ShaderInfo&
 	glslang_program_delete(program);
 	glslang_shader_delete(shader);
 
-	
 	return Utils::CompilationResult::Success;
 }
 

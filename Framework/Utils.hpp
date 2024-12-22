@@ -3,10 +3,10 @@
 #include <Core.hpp>
 
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <functional>
 
 #include <glslang/Include/glslang_c_interface.h>
 
@@ -46,6 +46,7 @@ namespace Framework
 			ShaderStage shaderStage{ ShaderStage::Vertex };
 			GlslShaderCode shaderCode{};
 			bool enableDebugCompilation{ true };
+			std::string name{ "" };
 		};
 
 
@@ -70,7 +71,7 @@ namespace Framework
 
 			struct CachedIncludeValue
 			{
-				U32 counter{0};
+				U32 counter{ 0 };
 				std::string includeName;
 				std::string sourceCode;
 			};
