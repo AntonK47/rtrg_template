@@ -3,8 +3,24 @@
     "glm",
     "nlohmann-json",
     "glslang",
-    "imgui",
-    "gtest"
+    "gtest",
+    "volk",
+    "vulkan-headers",
+    "vulkan-memory-allocator",
+    "assimp",
+    {
+      "name": "stduuid",
+      "features": [ "system-gen" ]
+    },
+    "imgui-node-editor",
+    {
+      "name": "sdl3",
+      "features": [ "vulkan" ]
+    },
+    {
+      "name": "tracy",
+      "features": [ "gui-tools" ]
+    }
   ],
-  "builtin-baseline": "d567b667adba0e72c5c3931ddbe745b66aa34b73"
+  "builtin-baseline": "20a72ce99b12dd0ebfea5d39f32681bd68b19d03"
 }

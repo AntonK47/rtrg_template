@@ -15,7 +15,7 @@
 			"name": "gcc",
 			"cacheVariables": {
 				"CMAKE_C_COMPILER": "gcc",
-			  	"CMAKE_CXX_COMPILER": "g++"
+				"CMAKE_CXX_COMPILER": "g++"
 			},
 			"hidden": true
 		},
@@ -38,6 +38,20 @@
 			"name": "debug",
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Debug"
+			},
+			"hidden": true
+		},
+		{
+			"name": "profiling",
+			"cacheVariables": {
+				"RTRG_ENABLE_PROFILER": "ON"
+			},
+			"hidden": true
+		},
+		{
+			"name": "graphics_validation",
+			"cacheVariables": {
+				"RTRG_ENABLE_GRAPHICS_VALIDATION": "ON"
 			},
 			"hidden": true
 		},
@@ -74,22 +88,34 @@
 			"description": "Target Linux",
 			"hidden": true,
 			"condition": {
-			  "type": "equals",
-			  "lhs": "${hostSystemName}",
-			  "rhs": "Linux"
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
 			}
 		},
 		{
 			"name": "windows-x64-debug",
 			"displayName": "Windows x64 Debug",
 			"description": "",
-			"inherits": [ "base", "windows", "x64", "msvc", "debug", "vcpkg" ]
+			"inherits": [ "base", "windows", "x64", "msvc", "debug", "vcpkg", "graphics_validation" ]
 		},
 		{
 			"name": "windows-x64-release",
 			"description": "",
 			"displayName": "Windows x64 Release",
 			"inherits": [ "base", "windows", "x64", "msvc", "release", "vcpkg" ]
+		},
+		{
+			"name": "windows-x64-profiling-debug",
+			"displayName": "Windows x64 Debug",
+			"description": "",
+			"inherits": [ "base", "windows", "x64", "msvc", "debug", "vcpkg", "profiling", "graphics_validation" ]
+		},
+		{
+			"name": "windows-x64-profiling-release",
+			"description": "",
+			"displayName": "Windows x64 Release",
+			"inherits": [ "base", "windows", "x64", "msvc", "release", "vcpkg", "profiling" ]
 		},
 		{
 			"name": "linux-x64-debug",
@@ -116,6 +142,18 @@
 			"displayName": "Release",
 			"description": "Release configuration.",
 			"configurePreset": "windows-x64-release"
+		},
+		{
+			"name": "Windows Profiling Debug",
+			"displayName": "Profiling Debug",
+			"description": "Debug configuration.",
+			"configurePreset": "windows-x64-profiling-debug"
+		},
+		{
+			"name": "Windows Profiling Release",
+			"displayName": "Profiling Release",
+			"description": "Release configuration.",
+			"configurePreset": "windows-x64-profiling-release"
 		},
 		{
 			"name": "Linux Debug",

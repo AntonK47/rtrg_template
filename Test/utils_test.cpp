@@ -1,9 +1,10 @@
 #include <gtest/gtest.h>
 #include <string>
 
-#include "utils.hpp"
+#include <Utils.hpp>
 
-// Demonstrate some basic assertions.
+using namespace::Framework;
+
 TEST(CompilationToSPIRV, VertexAndFragmentShaderCompilationTest)
 {
 	auto shader01 =

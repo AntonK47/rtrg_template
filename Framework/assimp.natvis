@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  	<Type Name="aiScene">
+		<Expand>
+			
+			<Item Name="[root]">
+				mRootNode
+			</Item>
+			<Item Name="Meshes">
+				mMeshes,[mNumMeshes]
+			</Item>
+			<Item Name="Materials">
+				mMaterials,[mNumMaterials]
+			</Item>
+			<Item Name="Animations">
+				mAnimations,[mNumAnimations]
+			</Item>
+			<Item Name="Textures">
+				mTextures,[mNumTextures]
+			</Item>
+			<Item Name="Lights">
+				mLights,[mNumLights]
+			</Item>
+			<Item Name="Cameras">
+				mCameras,[mNumCameras]
+			</Item>
+			<Item Name="Skeletons">
+				mSkeletons,[mNumSkeletons]
+			</Item>
+		</Expand>
+	</Type>
+	<Type Name="aiMesh">
+		<DisplayString>{mName, s}</DisplayString>
+		<Expand>
+			<Item Name="Vertices">
+				mVertices, [mNumVertices]
+			</Item>
+			<Item Name="Normals">
+				mNormals, [mNumVertices]
+			</Item>
+			<Item Name="Tangents">
+				mTangents, [mNumVertices]
+			</Item>
+			<Item Name="Bitangents">
+				mBitangents, [mNumVertices]
+			</Item>
+			<Item Name="Colors">
+				mColors, [8]
+			</Item>
+			<Item Name="TextureCoords">
+				mTextureCoords, [8]
+			</Item>
+			<Item Name="NumUVComponents">
+				mNumUVComponents, [8]
+			</Item>
+			<Item Name="Faces">
+				mFaces, [mNumFaces]
+			</Item>
+			<Item Name="Bones">
+				mBones, [mNumBones]
+			</Item>
+			<Item Name="AnimMeshes">
+				mAnimMeshes, [mNumAnimMeshes]
+			</Item>
+			<Item Name="MaterialIndex">
+				mMaterialIndex
+			</Item>
+			<Item Name="Name">
+				mName
+			</Item>
+			<Item Name="MorphngMethod">
+				mMethod
+			</Item>
+			<Item Name="AABB">
+				mAABB
+			</Item>
+			<Item Name="TextureCoordsNames">
+				mTextureCoordsNames
+			</Item>
+		</Expand>
+	</Type>
+	<Type Name="aiString">
+		<DisplayString>{data,s}</DisplayString>
+		<StringView>data,s</StringView>
+	</Type>
+	<Type Name="aiNode">
+		<DisplayString>{{ name = {mName}}</DisplayString>
+		<Expand>
+			<Item Name="Name">
+				mName
+			</Item>
+			<Item Name="Transformation">
+				mTransformation
+			</Item>
+			<Item Name="Children">
+				mChildren, [mNumChildren]
+			</Item>
+			<Item Name="Meshes">
+				mMeshes, [mNumMeshes]
+			</Item>
+			<Item Name="MetaData">
+				mMetaData
+			</Item>
+		</Expand>
+	</Type>
+	<Type Name="aiFace">
+		<DisplayString Condition="mNumIndices == 3">[{mIndices[0]}, {mIndices[1]}, {mIndices[2]}]</DisplayString>
+		<Expand>
+			<Item Name="Indices" Condition="mNumIndices != 3">
+				mIndices, [mNumIndices]
+			</Item>
+		</Expand>
+	</Type>
+	<Type Name="aiMaterial">
+		<Expand>
+			<Item Name="Properties">
+				mProperties, [mNumProperties]
+			</Item>
+		</Expand>
+	</Type>
+	<Type Name="aiMaterialProperty">
+		<Expand>
+			<Item Name="Key">
+				mKey
+			</Item>
+			<Item Name="Value" Condition="mType == 3">
+				mData, [mDataLength]
+			</Item>
+		</Expand>
+	</Type>
+</AutoVisualizer>
