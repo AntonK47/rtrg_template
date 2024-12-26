@@ -244,7 +244,7 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 #pragma region Device creation
 	{
 		const auto enabledDeviceExtensions =
-			std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+			std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_MAINTENANCE_5_EXTENSION_NAME
 #ifdef RTRG_ENABLE_PROFILER
 						VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
 #endif
@@ -265,9 +265,16 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 												 .queueCount = 1,
 												 .pQueuePriorities = &queuePriority } };
 
+		auto maintenacne5Feautres = VkPhysicalDeviceMaintenance5FeaturesKHR{
+
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR,
+			.pNext = nullptr,
+			.maintenance5 = VK_TRUE
+		};
+
 		auto physicalDeviceFeatures13 = VkPhysicalDeviceVulkan13Features{};
 		physicalDeviceFeatures13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-		physicalDeviceFeatures13.pNext = nullptr;
+		physicalDeviceFeatures13.pNext = &maintenacne5Feautres;
 		physicalDeviceFeatures13.synchronization2 = VK_TRUE;
 		physicalDeviceFeatures13.dynamicRendering = VK_TRUE;
 
@@ -573,16 +580,19 @@ void VulkanContext::DestroyBuffer(const GraphicsBuffer& buffer) const
 	vmaDestroyBuffer(allocator, buffer.buffer, buffer.allocation);
 }
 
-VkShaderModule VulkanContext::ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path) const
+VkShaderModule VulkanContext::ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path,
+												   std::string_view entryPoint = "main") const
 {
 	const auto shader = LoadShaderFileAsText(path);
 
-	return ShaderModuleFromText(stage, shader, path.filename().string());
+	return ShaderModuleFromText(stage, shader, path.filename().string(), entryPoint);
 }
 
-VkShaderModule VulkanContext::ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader, std::string_view name) const
+VkShaderModule VulkanContext::ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader,
+												   std::string_view name, std::string_view entryPoint = "main") const
 {
-	const auto shaderInfo = Utils::ShaderInfo{ "main", {}, stage, Utils::GlslShaderCode{ shader }, true, std::string{name}};
+	const auto shaderInfo = Utils::ShaderInfo{ std::string{ entryPoint },		{},	  stage,
+											   Utils::GlslShaderCode{ shader }, true, std::string{ name } };
 
 	Utils::ShaderByteCode code;
 	const auto compilationResult = shaderCompiler->CompileToSpirv(shaderInfo, code);
@@ -601,6 +611,27 @@ VkShaderModule VulkanContext::ShaderModuleFromText(Utils::ShaderStage stage, std
 	return shaderModule;
 }
 
+Utils::ShaderByteCode VulkanContext::SpirvFromFile(Utils::ShaderStage stage, const std::filesystem::path& path,
+												   std::string_view entryPoint = "main") const
+{
+	const auto shader = LoadShaderFileAsText(path);
+
+	return SpirvFromText(stage, shader, path.filename().string(), entryPoint);
+}
+
+Utils::ShaderByteCode VulkanContext::SpirvFromText(Utils::ShaderStage stage, std::string_view shader,
+												   std::string_view name, std::string_view entryPoint = "main") const
+{
+	const auto shaderInfo = Utils::ShaderInfo{ std::string{ entryPoint },		{},	  stage,
+											   Utils::GlslShaderCode{ shader }, true, std::string{ name } };
+
+	Utils::ShaderByteCode code;
+	const auto compilationResult = shaderCompiler->CompileToSpirv(shaderInfo, code);
+	assert(compilationResult == Utils::CompilationResult::Success);
+
+	return code;
+}
+
 std::string Framework::Graphics::VulkanContext::LoadShaderFileAsText(const std::filesystem::path& path) const
 {
 	assert(std::filesystem::exists(path));
@@ -616,24 +647,39 @@ std::string Framework::Graphics::VulkanContext::LoadShaderFileAsText(const std::
 
 GraphicsPipeline VulkanContext::CreateGraphicsPipeline(const GraphicsPipelineDesc&& desc) const
 {
-	VkShaderModule fragmentShaderModule = ShaderModuleFromText(Utils::ShaderStage::Fragment, desc.fragmentShader.source, desc.fragmentShader.name);
-	VkShaderModule vertexShaderModule = ShaderModuleFromText(Utils::ShaderStage::Vertex, desc.vertexShader.source, desc.vertexShader.name);
+	const auto fragmentShaderCode = SpirvFromText(Utils::ShaderStage::Fragment, desc.fragmentShader.source,
+												  desc.fragmentShader.name, desc.fragmentShader.entryPoint);
+	const auto vertexShaderCode = SpirvFromText(Utils::ShaderStage::Vertex, desc.vertexShader.source,
+												desc.vertexShader.name, desc.vertexShader.entryPoint);
 
+	const auto fragmentShaderCodeCreateInfo =
+		VkShaderModuleCreateInfo{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+								  .pNext = nullptr,
+								  .flags = 0,
+								  .codeSize = fragmentShaderCode.size() * 4,
+								  .pCode = fragmentShaderCode.data() };
+
+	const auto vertexShaderCodeCreateInfo =
+		VkShaderModuleCreateInfo{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+								  .pNext = nullptr,
+								  .flags = 0,
+								  .codeSize = vertexShaderCode.size() * 4,
+								  .pCode = vertexShaderCode.data() };
 
 	const auto shaderStages =
 		std::array{ VkPipelineShaderStageCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-													 .pNext = nullptr,
+													 .pNext = &vertexShaderCodeCreateInfo,
 													 .flags = 0,
 													 .stage = VK_SHADER_STAGE_VERTEX_BIT,
-													 .module = vertexShaderModule,
-													 .pName = "main",
+													 .module = VK_NULL_HANDLE,
+													 .pName = desc.vertexShader.entryPoint.data(),
 													 .pSpecializationInfo = nullptr },
 					VkPipelineShaderStageCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-													 .pNext = nullptr,
+													 .pNext = &fragmentShaderCodeCreateInfo,
 													 .flags = 0,
 													 .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-													 .module = fragmentShaderModule,
-													 .pName = "main",
+													 .module = VK_NULL_HANDLE,
+													 .pName = desc.fragmentShader.entryPoint.data(),
 													 .pSpecializationInfo = nullptr } };
 
 
@@ -793,9 +839,6 @@ GraphicsPipeline VulkanContext::CreateGraphicsPipeline(const GraphicsPipelineDes
 	const auto result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline);
 	assert(result == VK_SUCCESS);
 
-	vkDestroyShaderModule(device, vertexShaderModule, nullptr);
-	vkDestroyShaderModule(device, fragmentShaderModule, nullptr);
-
 	SetObjectDebugName(VK_OBJECT_TYPE_PIPELINE, (U64)pipeline, desc.debugName);
 
 	return GraphicsPipeline{ pipeline };
@@ -879,24 +922,24 @@ void VulkanContext::CreateSwapchain(const WindowViewport& windowViewport)
 		swapchainImageColorSpace = format.surfaceFormat.colorSpace;
 	}
 
-	const auto swapchainCreateInfo =
-		VkSwapchainCreateInfoKHR{ .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-								  .pNext = nullptr,
-								  .flags = 0,
-								  .surface = surface,
-								  .minImageCount = swapchainImageCount,
-								  .imageFormat = swapchainImageFormat,
-								  .imageColorSpace = swapchainImageColorSpace,
-								  .imageExtent =
-									  VkExtent2D{ .width = windowViewport.width, .height = windowViewport.height },
-								  .imageArrayLayers = 1,
-								  .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-								  .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-								  .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-								  .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-								  .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR,//VK_PRESENT_MODE_FIFO_KHR, // VK_PRESENT_MODE_IMMEDIATE_KHR,
-								  .clipped = VK_FALSE,
-								  .oldSwapchain = VK_NULL_HANDLE };
+	const auto swapchainCreateInfo = VkSwapchainCreateInfoKHR{
+		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+		.pNext = nullptr,
+		.flags = 0,
+		.surface = surface,
+		.minImageCount = swapchainImageCount,
+		.imageFormat = swapchainImageFormat,
+		.imageColorSpace = swapchainImageColorSpace,
+		.imageExtent = VkExtent2D{ .width = windowViewport.width, .height = windowViewport.height },
+		.imageArrayLayers = 1,
+		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+		.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+		.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR, // VK_PRESENT_MODE_FIFO_KHR, // VK_PRESENT_MODE_IMMEDIATE_KHR,
+		.clipped = VK_FALSE,
+		.oldSwapchain = VK_NULL_HANDLE
+	};
 
 	const auto result = vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr, &swapchain);
 	assert(result == VK_SUCCESS);

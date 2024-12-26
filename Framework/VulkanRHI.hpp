@@ -29,7 +29,7 @@ namespace Framework
 			VkCommandPool commandPool;
 		};
 
-		using DebugColor = std::array<Float, 4>;
+		using DebugColor = std::array<F32, 4>;
 
 		struct DebugColorPalette
 		{
@@ -116,6 +116,7 @@ namespace Framework
 		{
 			std::string_view name;
 			std::string_view source;
+			std::string_view entryPoint{ "main" };
 		};
 
 		struct GraphicsPipelineDesc
@@ -175,8 +176,11 @@ namespace Framework
 			GraphicsBuffer CreateBuffer(const BufferDesc&& desc) const;
 			void DestroyBuffer(const GraphicsBuffer& buffer) const;
 
-			VkShaderModule ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path) const;
-			VkShaderModule ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader, std::string_view name) const;
+			VkShaderModule ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path, std::string_view entryPoint) const;
+			VkShaderModule ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader, std::string_view name, std::string_view entryPoint) const;
+
+			Utils::ShaderByteCode SpirvFromFile(Utils::ShaderStage stage, const std::filesystem::path& path, std::string_view entryPoint) const;
+			Utils::ShaderByteCode SpirvFromText(Utils::ShaderStage stage, std::string_view shader, std::string_view name, std::string_view entryPoint) const;
 
 			std::string LoadShaderFileAsText(const std::filesystem::path& path) const;
 
