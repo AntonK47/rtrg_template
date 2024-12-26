@@ -93,6 +93,17 @@ namespace
 		return 0;
 	}
 
+	namespace glslang_entry_point_fix
+	{
+		typedef struct glslang_shader_s
+		{
+			glslang::TShader* shader;
+			std::string preprocessedGLSL;
+			std::vector<std::string> baseResourceSetBinding;
+		} glslang_shader_t;
+	} // namespace glslang_entry_point_fix
+
+
 } // namespace
 
 Utils::ShaderCompiler::ShaderCompiler(CompilerOptions options)
@@ -101,14 +112,17 @@ Utils::ShaderCompiler::ShaderCompiler(CompilerOptions options)
 	const auto optimize = options.optimize;
 	const auto stripDebugInfo = options.stripDebugInfo;
 
-	spirvOptions = glslang_spv_options_t{ .generate_debug_info = not stripDebugInfo,
-										  .strip_debug_info = stripDebugInfo,
-										  .disable_optimizer = not optimize,
-										  .optimize_size = false,
-										  .disassemble = false,
-										  .validate = true,
-										  .emit_nonsemantic_shader_debug_info = false,
-										  .emit_nonsemantic_shader_debug_source = false }; //FIX: Nsight Graphics requires nonsematic for proper shader profiling, but by enabling this feater the shader will be shown incorrect in the debugger
+	spirvOptions = glslang_spv_options_t{
+		.generate_debug_info = not stripDebugInfo,
+		.strip_debug_info = stripDebugInfo,
+		.disable_optimizer = not optimize,
+		.optimize_size = false,
+		.disassemble = false,
+		.validate = true,
+		.emit_nonsemantic_shader_debug_info = false,
+		.emit_nonsemantic_shader_debug_source = false
+	}; // FIX: Nsight Graphics requires nonsematic for proper shader profiling, but by enabling this feater the shader
+	   // will be shown incorrect in the debugger
 	glslang_initialize_process();
 }
 
@@ -145,6 +159,7 @@ Utils::CompilationResult Utils::ShaderCompiler::CompileToSpirv(const ShaderInfo&
 									.callbacks_ctx = this };
 
 	glslang_shader_t* shader = glslang_shader_create(&input);
+
 	if (!glslang_shader_preprocess(shader, &input))
 	{
 		logCallback("GLSL preprocessing failed!");
@@ -154,6 +169,13 @@ Utils::CompilationResult Utils::ShaderCompiler::CompileToSpirv(const ShaderInfo&
 		glslang_shader_delete(shader);
 		return CompilationResult::Failed;
 	}
+
+	::glslang_entry_point_fix::glslang_shader_t* shaderFix =
+		reinterpret_cast<::glslang_entry_point_fix::glslang_shader_t*>(shader);
+
+	shaderFix->shader->setEntryPoint(info.entryPoint.c_str());
+	shaderFix->shader->setSourceEntryPoint(info.entryPoint.c_str());
+	glslang_program_add_shader(program, shader);
 
 	if (!glslang_shader_parse(shader, &input))
 	{
@@ -165,8 +187,8 @@ Utils::CompilationResult Utils::ShaderCompiler::CompileToSpirv(const ShaderInfo&
 		return CompilationResult::Failed;
 	}
 
-
-	glslang_program_add_shader(program, shader);
+	shaderFix->shader->setEntryPoint(info.entryPoint.c_str());
+	shaderFix->shader->setSourceEntryPoint(info.entryPoint.c_str());
 
 	if (!glslang_program_link(program, GLSLANG_MSG_SPV_RULES_BIT | GLSLANG_MSG_VULKAN_RULES_BIT))
 	{
