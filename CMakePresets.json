@@ -107,14 +107,14 @@
 		},
 		{
 			"name": "windows-x64-profiling-debug",
-			"displayName": "Windows x64 Debug",
+			"displayName": "Windows x64 Profiling Debug",
 			"description": "",
 			"inherits": [ "base", "windows", "x64", "msvc", "debug", "vcpkg", "profiling", "graphics_validation" ]
 		},
 		{
 			"name": "windows-x64-profiling-release",
 			"description": "",
-			"displayName": "Windows x64 Release",
+			"displayName": "Windows x64 Profiling Release",
 			"inherits": [ "base", "windows", "x64", "msvc", "release", "vcpkg", "profiling" ]
 		},
 		{
