@@ -188,7 +188,13 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 	auto vertexOffset = 0u;
 	const auto skeleton = importer.ImportSkeleton(0);
 	skeletons.push_back(skeleton);
-	animationDataSet = importer.LoadAllAnimations(skeleton, 60);
+	const auto animations = importer.LoadAllAnimations(skeleton, 60);
+
+	animationDataSet.animationDatabase.insert(animationDataSet.animationDatabase.end(),
+											  animations.animationDatabase.begin(), animations.animationDatabase.end());
+
+	animationDataSet.animations.insert(animationDataSet.animations.end(), animations.animations.begin(),
+									   animations.animations.end());
 
 	struct DataUploadRegion
 	{
@@ -219,6 +225,8 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 		}
 	};
 
+	const auto indexByteOffset = geometryIndexBufferFreeOffset;
+	const auto vertexByteOffset = geometryBufferFreeOffset;
 
 	for (auto i = 0; i < info.meshCount; i++)
 	{
@@ -232,10 +240,13 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 				meshData.streams[0].streamDescriptor.attributes[j].componentSize;
 		}
 
+		const auto baseIndex = indexByteOffset / 4;
+		const auto baseVertex = vertexByteOffset / vertexSize;
+
 		this->meshes.push_back(
-			IndexedStaticMesh{ .indicesOffset = indexOffset,
+			IndexedStaticMesh{ .indicesOffset = baseIndex + indexOffset,
 							   .indicesCount = static_cast<uint32_t>(meshData.indexStream.size() / 4),
-							   .verticesOffset = vertexOffset,
+							   .verticesOffset = baseVertex + vertexOffset,
 							   .verticesCount = static_cast<uint32_t>(meshData.streams[0].data.size() / vertexSize),
 							   .stride = vertexSize });
 		indexOffset += static_cast<uint32_t>(meshData.indexStream.size() / 4);

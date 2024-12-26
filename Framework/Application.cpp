@@ -284,14 +284,8 @@ void Framework::Application::Run()
 			ImGui::End();
 
 			auto& scene = basicRenderPipeline.GetScene();
-			const auto pose0 = SamplePose(scene.animationDataSet, animationInstances[selectedAnimation],
+			const auto pose = SamplePose(scene.animationDataSet, animationInstances[selectedAnimation],
 										  useGlobalTimeInAnimation ? time : animationTime);
-
-			const auto pose1 = SamplePose(scene.animationDataSet,
-										  animationInstances[std::min({ (int)animationInstances.size() - 1, 4 })],
-										  useGlobalTimeInAnimation ? time : animationTime);
-
-			const auto pose = BlendPose(pose0, pose1, blendFactor);
 
 			auto jointMatrices = ComputeJointsMatrices(pose, scene.skeletons[0]);
 
@@ -312,14 +306,6 @@ void Framework::Application::Run()
 				auto& drawList = *ImGui::GetBackgroundDrawList();
 				drawList.PushClipRectFullScreen();
 				const auto debugDrawColor = IM_COL32(100, 100, 250, 255);
-
-				/*if (isVisible)
-				{
-					auto p = ImVec2{ meshOriginPositionScreenSpace.x, meshOriginPositionScreenSpace.y };
-					drawList.AddCircleFilled(p, 4.0f, debugDrawColor);
-					drawList.AddText(ImVec2{ p.x - 40.0f, p.y + 16.0f }, debugDrawColor, "mesh");
-				}*/
-
 				const auto& skeleton = scene.skeletons.front();
 
 
