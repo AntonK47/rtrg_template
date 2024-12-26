@@ -193,7 +193,7 @@ GraphicsPipeline BasicGeometryPass::CompileOpaqueMaterialPsoOnly(const VulkanCon
 	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/BasicSkinnedGeometry.vert");
 
 	const auto pipeline = context.CreateGraphicsPipeline(GraphicsPipelineDesc{
-		.vertexShader = { std::string{ runtime_format("BasicGeometry.vert") }, vertexShader },
+		.vertexShader = { std::string{ runtime_format("BasicSkinnedGeometry.vert") }, vertexShader, "main" },
 		.fragmentShader = { std::string{ runtime_format("BasicGeometry.generated.{}.frag", hash) }, fragmentShader },
 		.renderTargets = { Format::rgba8unorm },
 		.depthRenderTarget = depthFormat,
@@ -231,10 +231,10 @@ void BasicGeometryPass::CreateResources(const VulkanContext& context, Scene& sce
 		assert(result == VK_SUCCESS);
 	}
 
-	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/BasicGeometry.vert");
+	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/BasicSkinnedGeometry.vert");
 	const auto fragmentShader = context.LoadShaderFileAsText("Assets/Shaders/BasicGeometry.frag");
 	pipeline = context.CreateGraphicsPipeline(
-		GraphicsPipelineDesc{ .vertexShader = { "BasicGeometry.vert", vertexShader },
+		GraphicsPipelineDesc{ .vertexShader = { "BasicSkinnedGeometry.vert", vertexShader,  "main" },
 							  .fragmentShader = { "BasicGeometry.frag", fragmentShader },
 							  .renderTargets = { Format::rgba8unorm },
 							  .depthRenderTarget = depthFormat,

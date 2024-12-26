@@ -3,10 +3,10 @@
 
 ivec4 decodeJointIndicies(uint jointIndicies)
 {
-	uint i0 = jointIndicies & 255;
-	uint i1 = (jointIndicies >> 8) & 255;
-	uint i2 = (jointIndicies >> 16) & 255;
-	uint i3 = (jointIndicies >> 24) & 255;
+	uint i0 = jointIndicies & uint(255);
+	uint i1 = (jointIndicies >> 8) & uint(255);
+	uint i2 = (jointIndicies >> 16) & uint(255);
+	uint i3 = (jointIndicies >> 24) & uint(255);
 
 	return ivec4(i0, i1, i2, i3);
 }

@@ -4,12 +4,14 @@
 #extension GL_GOOGLE_include_directive : require
 #include "Common/Skinning.Library.glsl"
 
+#include "UnifiedGeometryBuffer.Library.glsl"
+
 layout(location = 0) out vec2 uv;
 layout(location = 1) out vec3 normal;
 layout(location = 2) out vec3 positionWS;
 layout(location = 3) out vec3 viewPositionWS;
 
-struct Vertex
+struct SkinnedVertex
 {
 	vec3 position;
 	vec3 normal;
@@ -18,10 +20,6 @@ struct Vertex
 	vec4 jointWeights;
 };
 
-layout(scalar, set=0, binding=0) readonly buffer globalGeometryBufferBlock
-{
-	Vertex globalGeometryBuffer[];
-};
 layout(scalar, set=0, binding=1) readonly buffer globalGeometryIndexBufferBlock
 {
 	int globalGeometryIndexBuffer[];
@@ -55,19 +53,16 @@ layout(push_constant) uniform constantsBlock
 } constants;
 
 
-/*Vertex decode(in uint vertexOffset)
+SkinnedVertex decode(uint baseOffset, uint vertexOffset)
 {
-	vec4 v1 = unpackSnorm4x8(globalGeometryBuffer[vertexOffset]);
-	vec4 v2 = unpackSnorm4x8(globalGeometryBuffer[vertexOffset + 1]);
-	
+	vec3 position = UNIFIED_GEOMETRY_BUFFER_GetVec3(baseOffset, vertexOffset);
+	vec3 normal = UNIFIED_GEOMETRY_BUFFER_GetVec3(baseOffset, vertexOffset + 3);
+	vec2 uv0 = UNIFIED_GEOMETRY_BUFFER_GetVec2(baseOffset, vertexOffset + 6);
+	uint jointIndicies = UNIFIED_GEOMETRY_BUFFER_GetUint(baseOffset, vertexOffset + 8);
+	vec4 jointWeights = UNIFIED_GEOMETRY_BUFFER_GetVec4(baseOffset, vertexOffset + 9);
 
-	vec3 position = v1.xyz;
-	vec3 normal = vec3(v1.w, v2.xy);
-	vec2 uv0 = v2.zw;
-	uint jointIndicies = globalGeometryBuffer[vertexOffset + 2];
-	vec4 jointWeights = unpackSnorm4x8(globalGeometryBuffer[vertexOffset + 3]);
 
-	Vertex v;
+	SkinnedVertex v;
 	v.position = position;
 	v.normal = normal;
 	v.uv0 = uv0;
@@ -75,17 +70,16 @@ layout(push_constant) uniform constantsBlock
 	v.jointWeights = jointWeights;
 	return v;
 }
-*/
+
 void main()
 {
 	SubMesh subMesh = subMeshes[gl_InstanceIndex];
 
 	int index = globalGeometryIndexBuffer[gl_VertexIndex + int(subMesh.indexBase)];
-	uint vertexOffset = subMesh.vertexBase + subMesh.vertexStride * index;
+	uint vertexByteOffset = 13 * index;
 
-	
-	Vertex vertex = globalGeometryBuffer[subMesh.vertexBase + index];
-	//Vertex vertex = decode(vertexOffset);
+	SkinnedVertex vertex = decode(subMesh.vertexBase * 13, vertexByteOffset);
+	//TODO: remove hardcoded byte stide
 
 	vec3 position = vertex.position;
 	uv = vertex.uv0;
