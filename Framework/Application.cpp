@@ -374,7 +374,7 @@ void Framework::Application::Run()
 	tracy::GetProfiler().RequestShutdown();
 	while (!tracy::GetProfiler().HasShutdownFinished())
 	{
-		// TODO: It will not stop when the sampling prolofiling is enabled
+		// TODO: It will not stop when the sampling profiling is enabled
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 #endif // RTRG_ENABLE_PROFILER

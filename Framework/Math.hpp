@@ -22,12 +22,12 @@ namespace Framework
 
 		// using Matrix4x4 = glm::mat4;
 
-		inline Quaternion Slerp(const Quaternion& q1, const Quaternion& q2, Float interpolationFactor)
+		inline Quaternion Slerp(const Quaternion& q1, const Quaternion& q2, F32 interpolationFactor)
 		{
 			return glm::slerp(q1, q2, interpolationFactor);
 		}
 
-		inline Vector3 Mix(const Vector3& v1, const Vector3& v2, Float interpolationFactor)
+		inline Vector3 Mix(const Vector3& v1, const Vector3& v2, F32 interpolationFactor)
 		{
 			return glm::mix(v1, v2, interpolationFactor);
 		}
@@ -61,7 +61,7 @@ namespace Framework
 			}
 		};
 
-		inline Float Modulo(Float x, Float y)
+		inline F32 Modulo(F32 x, F32 y)
 		{
 			return std::fmodf(x, y);
 		}
@@ -71,12 +71,12 @@ namespace Framework
 			return x % y;
 		}
 
-		inline Float Floor(Float x)
+		inline F32 Floor(F32 x)
 		{
 			return std::floorf(x);
 		}
 
-		inline Float Ceil(Float x)
+		inline F32 Ceil(F32 x)
 		{
 			return std::ceilf(x);
 		}

@@ -10,8 +10,8 @@ namespace Framework
 		Math::Vector3 position;
 		Math::Vector3 forward;
 		Math::Vector3 up;
-		Float movementSpeed{ 1.0f };
-		Float movementSpeedScale{ 1.0f };
-		Float sensitivity{ 1.0f };
+		F32 movementSpeed{ 1.0f };
+		F32 movementSpeedScale{ 1.0f };
+		F32 sensitivity{ 1.0f };
 	};
 } // namespace Framework

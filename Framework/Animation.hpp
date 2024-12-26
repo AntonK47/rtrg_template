@@ -10,22 +10,20 @@ namespace Framework
 {
 	namespace Animation
 	{
-
-
 		struct AnimationData
 		{
 			U32 offset;
 			U32 count;
 			U32 frames;
-			Float duration;
+			F32 duration;
 			std::string animationName;
 		};
 
 		struct AnimationInstance
 		{
 			AnimationData data;
-			Float playbackRate;
-			Float startTime;
+			F32 playbackRate;
+			F32 startTime;
 			bool loop;
 		};
 
@@ -104,7 +102,7 @@ namespace Framework
 			}
 		}
 
-		inline LocalPose BlendPose(const LocalPose& pose0, const LocalPose& pose1, Float blendFactor)
+		inline LocalPose BlendPose(const LocalPose& pose0, const LocalPose& pose1, F32 blendFactor)
 		{
 			ZoneScoped;
 			assert(pose0.data.size() == pose1.data.size());
@@ -121,23 +119,23 @@ namespace Framework
 			return finalPose;
 		}
 
-		inline LocalPose SamplePose(const AnimationDataSet& animationDataSet, const AnimationData& data, Float time)
+		inline LocalPose SamplePose(const AnimationDataSet& animationDataSet, const AnimationData& data, F32 time)
 		{
 			ZoneScoped;
 			auto pose = LocalPose{}; // normally this should be allocated outside of the function call
 			pose.data.resize(data.count);
 
-			Float fps = data.frames / data.duration;
-			Float timePerFrame = data.duration / data.frames;
-			Float index = time * fps;
+			F32 fps = data.frames / data.duration;
+			F32 timePerFrame = data.duration / data.frames;
+			F32 index = time * fps;
 
 
 			const auto first = Math::Modulo(As<U32>(Math::Floor(index)), data.frames);
 			auto second = Math::Modulo(As<U32>(Math::Ceil(index)), data.frames);
 
-			Float t1 = first*timePerFrame;
-			Float t2 = second*timePerFrame;
-			Float rest = (time - t1)/(t2-t1);
+			F32 t1 = first*timePerFrame;
+			F32 t2 = second*timePerFrame;
+			F32 rest = (time - t1)/(t2-t1);
 
 
 			if (first == second)
@@ -164,10 +162,10 @@ namespace Framework
 		}
 
 		inline LocalPose SamplePose(const AnimationDataSet& animationDataSet, const AnimationInstance& instance,
-									Float globalTime)
+									F32 globalTime)
 		{
 			ZoneScoped;
-			Float localTime = (globalTime - instance.startTime) * instance.playbackRate;
+			F32 localTime = (globalTime - instance.startTime) * instance.playbackRate;
 
 			if (instance.loop)
 			{

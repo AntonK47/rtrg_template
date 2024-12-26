@@ -12,7 +12,7 @@ using namespace Framework::Graphics;
 
 void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTarget, const Scene& scene,
 								const FrameData::PerFrameResources& frame, const Camera& camera,
-								const WindowViewport windowViewport, Float deltaTime)
+								const WindowViewport windowViewport, F32 deltaTime)
 {
 	ZoneNamedNS(__tracy, "BasicGeometryPass::Execute", RTRG_PROFILER_CALLSTACK_DEPTH, true);
 	TracyVkZone(vulkanContext->gpuProfilerContext, cmd, "BasicGeometryPass");
@@ -190,7 +190,7 @@ GraphicsPipeline BasicGeometryPass::CompileOpaqueMaterialPsoOnly(const VulkanCon
 										materialAsset.surfaceShadingCode);
 
 	const auto hash = std::hash<std::string>{}(fragmentShader);
-	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/BasicGeometry.vert");
+	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/BasicSkinnedGeometry.vert");
 
 	const auto pipeline = context.CreateGraphicsPipeline(GraphicsPipelineDesc{
 		.vertexShader = { std::string{ runtime_format("BasicGeometry.vert") }, vertexShader },
@@ -260,7 +260,7 @@ void BasicGeometryPass::ReleaseResources(const VulkanContext& context)
 
 
 void Framework::Graphics::FullscreenQuadPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTarget,
-													  const WindowViewport windowViewport, Float deltaTime)
+													  const WindowViewport windowViewport, F32 deltaTime)
 {
 	ZoneNamedNS(__tracy, "FullscreenQuadPass::Execute", RTRG_PROFILER_CALLSTACK_DEPTH, true);
 	TracyVkZone(vulkanContext->gpuProfilerContext, cmd, "FullscreenQuadPass");
@@ -351,7 +351,7 @@ void FullscreenQuadPass::ReleaseResources(const VulkanContext& context)
 
 
 void Framework::Graphics::ImGuiPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTarget,
-											 const WindowViewport windowViewport, Float deltaTime)
+											 const WindowViewport windowViewport, F32 deltaTime)
 {
 	ZoneNamedNS(__tracy, "ImGuiPass::Execute", RTRG_PROFILER_CALLSTACK_DEPTH, true);
 	TracyVkZone(vulkanContext->gpuProfilerContext, cmd, "ImGuiPass");

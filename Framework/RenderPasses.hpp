@@ -17,8 +17,8 @@ namespace Framework
 
 		struct ShaderToyConstant
 		{
-			Float time;
-			Float resolution[2];
+			F32 time;
+			F32 resolution[2];
 		};
 
 		struct ConstantsData
@@ -45,7 +45,7 @@ namespace Framework
 
 			void Execute(const VkCommandBuffer& cmd, VkImageView colorTarget, const Scene& scene,
 						 const FrameData::PerFrameResources& frame, const Camera& camera,
-						 const WindowViewport windowViewport, Float deltaTime);
+						 const WindowViewport windowViewport, F32 deltaTime);
 
 			void CreateViewDependentResources(const VulkanContext& context, const WindowViewport& windowViewport);
 			void ReleaseViewDependentResources(const VulkanContext& context);
@@ -63,12 +63,12 @@ namespace Framework
 		{
 			GraphicsPipeline pipeline{};
 			PipelineLayout pipelineLayout{};
-			Float time{ 0 };
+			F32 time{ 0 };
 
 			const VulkanContext* vulkanContext;
 
 			void Execute(const VkCommandBuffer& cmd, VkImageView colorTarget, const WindowViewport windowViewport,
-						 Float deltaTime);
+						 F32 deltaTime);
 
 			void CreateResources(const VulkanContext& context);
 			void ReleaseResources(const VulkanContext& context);
@@ -80,7 +80,7 @@ namespace Framework
 			const VulkanContext* vulkanContext;
 
 			void Execute(const VkCommandBuffer& cmd, VkImageView colorTarget, const WindowViewport windowViewport,
-						 Float deltaTime);
+						 F32 deltaTime);
 
 			void CreateResources(const VulkanContext& context);
 			void ReleaseResources(const VulkanContext& context);

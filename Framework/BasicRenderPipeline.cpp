@@ -41,7 +41,7 @@ void Framework::Graphics::BasicRenderPipeline::Deinitialize(const VulkanContext&
 
 void Framework::Graphics::BasicRenderPipeline::Execute(const VulkanContext& context,
 													   const WindowViewport& windowViewport, const Camera& camera,
-													   Float deltaTime)
+													   F32 deltaTime)
 {
 	ZoneScoped;
 	const auto perFrameResourceIndex = frameIndex % context.frameResourceCount;

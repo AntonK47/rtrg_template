@@ -22,7 +22,7 @@ namespace Framework
 	using I32 = int32_t;
 	using I64 = int64_t;
 
-	using Float = float;
+	using F32 = float;
 
 	template <typename T1, typename T2>
 	inline constexpr T1 As(T2 x)
@@ -32,7 +32,7 @@ namespace Framework
 	}
 
 	template <>
-	inline constexpr U32 As<U32, Float>(Float x)
+	inline constexpr U32 As<U32, F32>(F32 x)
 	{
 		return static_cast<U32>(x);
 	}
