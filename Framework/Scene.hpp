@@ -15,7 +15,7 @@ namespace Framework
 		U32 indicesCount;
 		U32 verticesOffset;
 		U32 verticesCount;
-		U32 stride;
+	};
 	};
 
 	struct Scene
@@ -59,14 +59,23 @@ namespace Framework
 
 		Graphics::GraphicsBuffer geometryBuffer{};
 		U32 geometryBufferFreeOffset{ 0 };
-		Graphics::GraphicsBuffer geometryIndexBuffer{};
-		U32 geometryIndexBufferFreeOffset{ 0 };
+
 
 		Graphics::GraphicsBuffer subMeshesBuffer{};
 
 		std::vector<IndexedStaticMesh> meshes;
 		std::vector<Animation::Skeleton> skeletons;
 		Animation::AnimationDataSet animationDataSet;
+		std::vector<Math::Matrix4x4> modelMatrices;
+
+
+		// Unified Geometry Buffer
+		Graphics::GraphicsBuffer geometryLookupTableBuffer{};
+		Graphics::ComputePipeline lookupTableUpdatePipeline{};
+		Graphics::PipelineLayout lookupTableUpdatePipelineLayout{};
+
+		// Skinned Cache
+		Graphics::GraphicsBuffer skinnedCacheBuffer{};
 	};
 
 } // namespace Framework

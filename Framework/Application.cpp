@@ -133,14 +133,10 @@ void Framework::Application::Run()
 	guiSystem.Initialize(vulkanContext, window, basicRenderPipeline.imGuiPass);
 #pragma endregion
 
-#pragma region Scene preparation
-	basicRenderPipeline.GetScene().Upload("Assets/Meshes/CesiumMan.glb", vulkanContext);
-#pragma endregion
-
 #pragma region Setup Camera
 	auto camera = Camera{ .position = glm::vec3{ 0.0f, 0.0f, 0.0f },
 						  .forward = glm::vec3{ 0.0f, 0.0f, 1.0f },
-						  .up = glm::vec3{ 0.0f, 1.0f, 0.0f },
+						  .up = glm::vec3{ 0.0f, -1.0f, 0.0f },
 						  .movementSpeed = 0.01f,
 						  .sensitivity = 0.2f };
 #pragma endregion
@@ -215,6 +211,12 @@ void Framework::Application::Run()
 
 			assetImporterEditor.Draw();
 
+			if(ImGui::Button("load mesh"))
+			{
+				basicRenderPipeline.GetScene().Upload("Assets/Meshes/after_the_rain..._-_vr__sound/scene.gltf", vulkanContext);
+			}
+
+/*
 			static float animationTime = 0.0f;
 			static bool useGlobalTimeInAnimation = true;
 			static int selectedAnimation = 0;
@@ -285,7 +287,7 @@ void Framework::Application::Run()
 
 			auto& scene = basicRenderPipeline.GetScene();
 			const auto pose = SamplePose(scene.animationDataSet, animationInstances[selectedAnimation],
-										  useGlobalTimeInAnimation ? time : animationTime);
+										 useGlobalTimeInAnimation ? time : animationTime);
 
 			auto jointMatrices = ComputeJointsMatrices(pose, scene.skeletons[0]);
 
@@ -340,6 +342,7 @@ void Framework::Application::Run()
 				}
 				drawList.PopClipRect();
 			}
+			*/
 #pragma endregion
 		}
 #pragma region Render State

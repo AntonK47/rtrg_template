@@ -241,10 +241,19 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 	}
 #pragma endregion
 
+#pragma region Read Device Limits
+	{
+		VkPhysicalDeviceProperties2 properties{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+												.pNext = nullptr };
+		vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
+		limits.maxUniformBufferRange = properties.properties.limits.maxUniformBufferRange;
+	}
+#pragma endregion
+
 #pragma region Device creation
 	{
 		const auto enabledDeviceExtensions =
-			std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_MAINTENANCE_5_EXTENSION_NAME
+			std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 #ifdef RTRG_ENABLE_PROFILER
 						VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
 #endif
@@ -265,16 +274,10 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 												 .queueCount = 1,
 												 .pQueuePriorities = &queuePriority } };
 
-		auto maintenacne5Feautres = VkPhysicalDeviceMaintenance5FeaturesKHR{
-
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR,
-			.pNext = nullptr,
-			.maintenance5 = VK_TRUE
-		};
 
 		auto physicalDeviceFeatures13 = VkPhysicalDeviceVulkan13Features{};
 		physicalDeviceFeatures13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-		physicalDeviceFeatures13.pNext = &maintenacne5Feautres;
+		physicalDeviceFeatures13.pNext = nullptr; //&maintenacne5Feautres;
 		physicalDeviceFeatures13.synchronization2 = VK_TRUE;
 		physicalDeviceFeatures13.dynamicRendering = VK_TRUE;
 
@@ -475,10 +478,17 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 									OutputDebugString(runtime_format("[Shader Compiler]: {}\n", message).c_str());
 #endif
 								} });
+
+#pragma region Create Dynamic Uniform Buffer
+	{
+		dynamicUniformAllocator.Initialize(*this, 16 * 1024 * 1024);
+	}
+#pragma endregion
 }
 
 void Framework::Graphics::VulkanContext::Deinitialize()
 {
+	dynamicUniformAllocator.Deinitialize();
 	vmaDestroyAllocator(allocator);
 #ifdef RTRG_ENABLE_PROFILER
 	TracyVkDestroy(gpuProfilerContext);
@@ -666,19 +676,29 @@ GraphicsPipeline VulkanContext::CreateGraphicsPipeline(const GraphicsPipelineDes
 								  .codeSize = vertexShaderCode.size() * 4,
 								  .pCode = vertexShaderCode.data() };
 
+	auto vertexShaderModule = VkShaderModule{};
+	auto fragmentShaderModule = VkShaderModule{};
+	{
+
+		auto result = vkCreateShaderModule(device, &vertexShaderCodeCreateInfo, nullptr, &vertexShaderModule);
+		assert(result == VK_SUCCESS);
+		result = vkCreateShaderModule(device, &fragmentShaderCodeCreateInfo, nullptr, &fragmentShaderModule);
+		assert(result == VK_SUCCESS);
+	}
+
 	const auto shaderStages =
 		std::array{ VkPipelineShaderStageCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-													 .pNext = &vertexShaderCodeCreateInfo,
+													 .pNext = nullptr, //&vertexShaderCodeCreateInfo,
 													 .flags = 0,
 													 .stage = VK_SHADER_STAGE_VERTEX_BIT,
-													 .module = VK_NULL_HANDLE,
+													 .module = vertexShaderModule,
 													 .pName = desc.vertexShader.entryPoint.data(),
 													 .pSpecializationInfo = nullptr },
 					VkPipelineShaderStageCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-													 .pNext = &fragmentShaderCodeCreateInfo,
+													 .pNext = nullptr, //&fragmentShaderCodeCreateInfo,
 													 .flags = 0,
 													 .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-													 .module = VK_NULL_HANDLE,
+													 .module = fragmentShaderModule,
 													 .pName = desc.fragmentShader.entryPoint.data(),
 													 .pSpecializationInfo = nullptr } };
 
@@ -839,12 +859,59 @@ GraphicsPipeline VulkanContext::CreateGraphicsPipeline(const GraphicsPipelineDes
 	const auto result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline);
 	assert(result == VK_SUCCESS);
 
+	vkDestroyShaderModule(device, vertexShaderModule, nullptr);
+	vkDestroyShaderModule(device, fragmentShaderModule, nullptr);
+
 	SetObjectDebugName(VK_OBJECT_TYPE_PIPELINE, (U64)pipeline, desc.debugName);
 
 	return GraphicsPipeline{ pipeline };
 }
 
 void Framework::Graphics::VulkanContext::DestroyGraphicsPipeline(const GraphicsPipeline& pipeline) const
+{
+	vkDestroyPipeline(device, pipeline.pipeline, nullptr);
+}
+
+ComputePipeline Framework::Graphics::VulkanContext::CreateComputePipeline(const ComputePipelineDesc&& desc) const
+{
+	const auto shaderCode = SpirvFromText(Utils::ShaderStage::Compute, desc.computeShader.source,
+										  desc.computeShader.name, desc.computeShader.entryPoint);
+
+	const auto shaderCodeCreateInfo = VkShaderModuleCreateInfo{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+																.pNext = nullptr,
+																.flags = 0,
+																.codeSize = shaderCode.size() * 4,
+																.pCode = shaderCode.data() };
+
+	auto shaderModule = VkShaderModule{};
+	{
+		const auto result = vkCreateShaderModule(device, &shaderCodeCreateInfo, nullptr, &shaderModule);
+		assert(result == VK_SUCCESS);
+	}
+	const auto pipelineCreateInfo = VkComputePipelineCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+		.pNext = nullptr,
+		.flags = 0,
+		.stage = VkPipelineShaderStageCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+												  .pNext = nullptr, //&shaderCodeCreateInfo,
+												  .flags = 0,
+												  .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+												  .module = shaderModule,
+												  .pName = desc.computeShader.entryPoint.data(),
+												  .pSpecializationInfo = nullptr },
+		.layout = desc.pipelineLayout.layout
+	};
+
+	VkPipeline pipeline;
+	const auto result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline);
+	assert(result == VK_SUCCESS);
+
+	vkDestroyShaderModule(device, shaderModule, nullptr);
+
+	return ComputePipeline{ .pipeline = pipeline };
+}
+
+void Framework::Graphics::VulkanContext::DestroyComputePipeline(const ComputePipeline& pipeline) const
 {
 	vkDestroyPipeline(device, pipeline.pipeline, nullptr);
 }
@@ -922,24 +989,24 @@ void VulkanContext::CreateSwapchain(const WindowViewport& windowViewport)
 		swapchainImageColorSpace = format.surfaceFormat.colorSpace;
 	}
 
-	const auto swapchainCreateInfo = VkSwapchainCreateInfoKHR{
-		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-		.pNext = nullptr,
-		.flags = 0,
-		.surface = surface,
-		.minImageCount = swapchainImageCount,
-		.imageFormat = swapchainImageFormat,
-		.imageColorSpace = swapchainImageColorSpace,
-		.imageExtent = VkExtent2D{ .width = windowViewport.width, .height = windowViewport.height },
-		.imageArrayLayers = 1,
-		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-		.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-		.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-		.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR, // VK_PRESENT_MODE_FIFO_KHR, // VK_PRESENT_MODE_IMMEDIATE_KHR,
-		.clipped = VK_FALSE,
-		.oldSwapchain = VK_NULL_HANDLE
-	};
+	const auto swapchainCreateInfo =
+		VkSwapchainCreateInfoKHR{ .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+								  .pNext = nullptr,
+								  .flags = 0,
+								  .surface = surface,
+								  .minImageCount = swapchainImageCount,
+								  .imageFormat = swapchainImageFormat,
+								  .imageColorSpace = swapchainImageColorSpace,
+								  .imageExtent =
+									  VkExtent2D{ .width = windowViewport.width, .height = windowViewport.height },
+								  .imageArrayLayers = 1,
+								  .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+								  .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+								  .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+								  .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+								  .presentMode = VK_PRESENT_MODE_FIFO_KHR, // VK_PRESENT_MODE_IMMEDIATE_KHR,
+								  .clipped = VK_FALSE,
+								  .oldSwapchain = VK_NULL_HANDLE };
 
 	const auto result = vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr, &swapchain);
 	assert(result == VK_SUCCESS);

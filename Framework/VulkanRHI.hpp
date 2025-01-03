@@ -85,6 +85,11 @@ namespace Framework
 			VkPipeline pipeline;
 		};
 
+		struct ComputePipeline
+		{
+			VkPipeline pipeline;
+		};
+
 		struct PipelineLayout
 		{
 			VkPipelineLayout layout;
@@ -131,11 +136,25 @@ namespace Framework
 			const char* debugName = "";
 		};
 
+		struct ComputePipelineDesc
+		{
+			ShaderSource computeShader;
+			PipelineLayout pipelineLayout{};
+			const char* debugName = "";
+		};
+
+		struct DeviceLimits
+		{
+			U32 maxUniformBufferRange{};
+		};
+
 		struct VulkanContext
 		{
 			VkInstance instance;
 			VkPhysicalDevice physicalDevice;
 			VkDevice device;
+
+			DeviceLimits limits{};
 
 			VmaAllocator allocator;
 
@@ -157,10 +176,75 @@ namespace Framework
 			uint32_t frameResourceCount{};
 			std::vector<PerFrameResource> perFrameResources{};
 
+
+			template <U32 segments>
+			struct DynamicUniformAllocator
+			{
+				GraphicsBuffer buffer;
+				mutable U32 nextOffset{ 0 };
+				U32 totalSize{ 0 };
+				mutable U32 frameIndex{ 0 };
+
+				struct RingSegment
+				{
+					U32 begin{ 0 };
+					U32 end{ 0 };
+				};
+				mutable std::array<RingSegment, segments> ringSegments{};
+
+				const VulkanContext* context{ nullptr };
+
+				void Initialize(const VulkanContext& context, U32 size)
+				{
+
+					this->context = &context;
+					totalSize = size;
+					buffer = context.CreateBuffer(BufferDesc{ .size = size,
+															  .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+															  .memoryUsage = MemoryUsage::upload,
+															  .debugName = "DynamicUniformBuffer" });
+				}
+				void Deinitialize()
+				{
+					context->DestroyBuffer(buffer);
+				}
+
+				void* Allocate(U32 size, U8 alignment = 8) const
+				{
+					auto& segment = ringSegments[frameIndex % segments];
+					auto alignedPtr = AlignUp((std::byte*)buffer.mappedPtr + nextOffset, alignment);
+
+					auto boundPtr = (std::byte*)alignedPtr + size;
+
+					if (boundPtr > (std::byte*)buffer.mappedPtr + totalSize)
+					{
+						alignedPtr = buffer.mappedPtr;
+						boundPtr = (std::byte*)alignedPtr + size;
+					}
+
+					assert(boundPtr > (std::byte*)buffer.mappedPtr + segment.end);
+					nextOffset = (U32)((std::byte*)boundPtr - (std::byte*)buffer.mappedPtr);
+
+					segment.end = nextOffset;
+					ringSegments[(frameIndex + 1) % segments].begin = nextOffset;
+
+					return alignedPtr;
+				}
+				void NextFrame() const 
+				{
+					frameIndex++;
+					auto& segment = ringSegments[frameIndex % segments];
+					nextOffset = segment.begin;
+				}
+			};
+
+			DynamicUniformAllocator<3> dynamicUniformAllocator{};
+
+
 #ifdef RTRG_ENABLE_PROFILER
 			TracyVkCtx gpuProfilerContext;
 #endif
-			std::unique_ptr<Utils::ShaderCompiler> shaderCompiler; //TODO: only required for editor application
+			std::unique_ptr<Utils::ShaderCompiler> shaderCompiler; // TODO: only required for editor application
 
 		public:
 			void Initialize(std::string_view applicationName, SDL_Window* window, const WindowViewport& windowViewport);
@@ -176,17 +260,24 @@ namespace Framework
 			GraphicsBuffer CreateBuffer(const BufferDesc&& desc) const;
 			void DestroyBuffer(const GraphicsBuffer& buffer) const;
 
-			VkShaderModule ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path, std::string_view entryPoint) const;
-			VkShaderModule ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader, std::string_view name, std::string_view entryPoint) const;
+			VkShaderModule ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path,
+												std::string_view entryPoint) const;
+			VkShaderModule ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader,
+												std::string_view name, std::string_view entryPoint) const;
 
-			Utils::ShaderByteCode SpirvFromFile(Utils::ShaderStage stage, const std::filesystem::path& path, std::string_view entryPoint) const;
-			Utils::ShaderByteCode SpirvFromText(Utils::ShaderStage stage, std::string_view shader, std::string_view name, std::string_view entryPoint) const;
+			Utils::ShaderByteCode SpirvFromFile(Utils::ShaderStage stage, const std::filesystem::path& path,
+												std::string_view entryPoint) const;
+			Utils::ShaderByteCode SpirvFromText(Utils::ShaderStage stage, std::string_view shader,
+												std::string_view name, std::string_view entryPoint) const;
 
 			std::string LoadShaderFileAsText(const std::filesystem::path& path) const;
 
 
 			GraphicsPipeline CreateGraphicsPipeline(const GraphicsPipelineDesc&& desc) const;
 			void DestroyGraphicsPipeline(const GraphicsPipeline& pipeline) const;
+
+			ComputePipeline CreateComputePipeline(const ComputePipelineDesc&& desc) const;
+			void DestroyComputePipeline(const ComputePipeline& pipeline) const;
 
 			void RecreateSwapchain(const WindowViewport& windowViewport);
 			void ReleaseSwapchainResources();

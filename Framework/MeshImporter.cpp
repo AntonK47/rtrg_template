@@ -10,6 +10,16 @@
 using namespace Framework;
 using namespace Framework::Animation;
 
+namespace
+{
+	Math::Matrix4x4 ToMatrix4x4(aiMatrix4x4 matrix)
+	{
+		return Math::Matrix4x4{ glm::transpose(
+			glm::mat4{ matrix.a1, matrix.a2, matrix.a3, matrix.a4, matrix.b1, matrix.b2, matrix.b3, matrix.b4,
+					   matrix.c1, matrix.c2, matrix.c3, matrix.c4, matrix.d1, matrix.d2, matrix.d3, matrix.d4 }) };
+	}
+} // namespace
+
 AssetImporter::AssetImporter(const std::filesystem::path& filePath)
 {
 
@@ -26,6 +36,34 @@ AssetImporter::AssetImporter(const std::filesystem::path& filePath)
 	sceneInformation.materialCount = scene->mNumMaterials;
 	sceneInformation.texturesCount = scene->mNumTextures;
 	sceneInformation.skeletonCount = scene->mNumSkeletons;
+
+
+	std::queue<aiNode*> nodes;
+
+	nodes.push(currentlyLoadedScene->mRootNode);
+
+	while (not nodes.empty())
+	{
+		auto node = nodes.front();
+		nodes.pop();
+
+		const auto key = std::string{ node->mName.C_Str() };
+		auto value = ToMatrix4x4(node->mTransformation);
+
+		if (node->mParent)
+		{
+			const auto parentKey = std::string{ node->mParent->mName.C_Str() };
+
+			value = modelNameTransformMap[parentKey] * value;
+		}
+
+		modelNameTransformMap[key] = value;
+
+		for (auto i = 0; i < node->mNumChildren; i++)
+		{
+			nodes.push(node->mChildren[i]);
+		}
+	}
 }
 
 AssetImporter::~AssetImporter()
@@ -76,7 +114,7 @@ MeshData AssetImporter::ImportMesh(U32 meshIndex, const MeshImportSettings& mesh
 
 	if (shouldLoadJointsIndexAndWeight)
 	{
-		assert(mesh.HasBones()); // TODO:
+		// assert(mesh.HasBones()); // TODO:
 	}
 
 	auto meshData = MeshData{};
@@ -593,4 +631,9 @@ AnimationDataSet AssetImporter::LoadAllAnimations(const Skeleton& skeleton, cons
 	}
 
 	return AnimationDataSet{ animationDataResult, animationDatabase };
+}
+
+const Math::Matrix4x4 Framework::AssetImporter::getModelMatrix(U32 meshIndex) const
+{
+	return modelNameTransformMap.at(std::string{ currentlyLoadedScene->mMeshes[meshIndex]->mName.C_Str() });
 }

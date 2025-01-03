@@ -4,14 +4,14 @@
 #extension GL_GOOGLE_include_directive : require
 #include "UnifiedGeometryBuffer.Shared.Common.Library.h"
 
-layout(set=UNIFIED_GEOMETRY_BUFFER_BASE_SET, binding=0) readonly buffer unifiedGeometryBufferBlock
-{
-	uint unifiedGeometryBuffer[];
-};
-
-layout(set=UNIFIED_GEOMETRY_BUFFER_BASE_SET, binding=1) readonly buffer unifiedGeometryBufferLookupTableBlock
+layout(set=UNIFIED_GEOMETRY_BUFFER_BASE_SET, binding=0) buffer unifiedGeometryBufferLookupTableBlock //TODO: somtimes it can be readonly
 {
 	uint unifiedGeometryBufferLookupTable[];
+};
+
+layout(set=UNIFIED_GEOMETRY_BUFFER_BASE_SET, binding=1) readonly buffer unifiedGeometryBufferBlock
+{
+	uint unifiedGeometryBuffer[];
 };
 
 #define UINT_BYTES_SIZE 2

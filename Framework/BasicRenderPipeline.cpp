@@ -1,5 +1,6 @@
 #include "BasicRenderPipeline.hpp"
 #include "Profiler.hpp"
+#include <ImGuiUtils.hpp>
 
 namespace
 {
@@ -67,6 +68,8 @@ void Framework::Graphics::BasicRenderPipeline::Execute(const VulkanContext& cont
 		}
 #pragma endregion
 
+		context.dynamicUniformAllocator.NextFrame();
+
 #pragma region Acquire Swapchain image
 		{
 			const auto acquireNextImageInfo =
@@ -130,12 +133,19 @@ void Framework::Graphics::BasicRenderPipeline::Execute(const VulkanContext& cont
 		context.BeginDebugLabelName(cmd, "Background Rendering", DebugColorPalette::Red);
 		fullscreenQuadPass.Execute(cmd, context.swapchainImageViews[imageIndex], windowViewport, deltaTime);
 		context.EndDebugLabelName(cmd);
+
+
+		context.BeginDebugLabelName(cmd, "Update Unified Geometry Buffer Lookup", DebugColorPalette::Blue);
+		scene.UpdateUnifiedGeometryBufferLookup(cmd);
+		context.EndDebugLabelName(cmd);
+
+
 		context.BeginDebugLabelName(cmd, "Mesh Rendering", DebugColorPalette::Green);
 
 		const auto descriptorBufferInfo = VkDescriptorBufferInfo{
 			.buffer = frameData.uniformBuffer.buffer,
 			.offset = frameData.jointMatricesOffset,
-			.range = frameData.jointMatricesSize,
+			.range = context.limits.maxUniformBufferRange//frameData.jointMatricesSize, //TODO: setting the joint values should be not happen here
 		};
 
 		const auto dsWrite =

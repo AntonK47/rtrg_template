@@ -20,11 +20,6 @@ struct SkinnedVertex
 	vec4 jointWeights;
 };
 
-layout(scalar, set=0, binding=1) readonly buffer globalGeometryIndexBufferBlock
-{
-	int globalGeometryIndexBuffer[];
-};
-
 layout(set=1, binding=0) readonly uniform JointMatricies
 {
 	mat4 jointMatricies[256];
@@ -33,9 +28,8 @@ layout(set=1, binding=0) readonly uniform JointMatricies
 
 struct SubMesh
 {
-	uint indexBase;
-	uint vertexBase;
-	uint vertexStride;
+	uint indexByteBase;
+	uint vertexByteBase;
 };
 
 layout(set=0, binding = 2) readonly buffer registeredSubMeshes
@@ -71,7 +65,32 @@ SkinnedVertex decode(uint baseOffset, uint vertexOffset)
 	return v;
 }
 
-void main()
+struct BasicVertex
+{
+	vec3 position;
+	vec3 normal;
+	vec2 uv0;
+};
+
+BasicVertex decode_base_vertex(uint baseOffset, uint vertexOffset)
+{
+	vec3 position = UNIFIED_GEOMETRY_BUFFER_GetVec3(baseOffset, vertexOffset);
+	vec3 normal = UNIFIED_GEOMETRY_BUFFER_GetVec3(baseOffset, vertexOffset + 3);
+	vec2 uv0 = UNIFIED_GEOMETRY_BUFFER_GetVec2(baseOffset, vertexOffset + 6);
+
+	BasicVertex v;
+	v.position = position;
+	v.normal = normal;
+	v.uv0 = uv0;
+	return v;
+}
+
+uint decode_base_index(uint baseOffset, uint indexOffset)
+{
+	return UNIFIED_GEOMETRY_BUFFER_GetUint(baseOffset, indexOffset);
+}
+
+/*void main()
 {
 	SubMesh subMesh = subMeshes[gl_InstanceIndex];
 
@@ -80,6 +99,7 @@ void main()
 
 	SkinnedVertex vertex = decode(subMesh.vertexBase * 13, vertexByteOffset);
 	//TODO: remove hardcoded byte stide
+
 
 	vec3 position = vertex.position;
 	uv = vertex.uv0;
@@ -97,5 +117,30 @@ void main()
 
 	vec3 vertexNormal = vertex.normal;
 	normal = transpose(inverse(mat3(skinning))) * vertexNormal;
+	viewPositionWS = constants.viewPositionWS;
+}*/
+
+void main()
+{
+	SubMesh subMesh = subMeshes[gl_InstanceIndex];
+
+	uint index = decode_base_index(subMesh.indexByteBase, uint(gl_VertexIndex));
+	uint vertexByteOffset = 8 * index;
+
+	BasicVertex vertex = decode_base_vertex(subMesh.vertexByteBase, vertexByteOffset);
+	//TODO: remove hardcoded byte stide
+
+
+	vec3 position = vertex.position;
+	uv = vertex.uv0;
+
+
+	
+	positionWS = vec3(constants.model * vec4(position, 1.0f));
+
+	gl_Position = constants.viewProjection * vec4(positionWS,1.0f);
+
+	vec3 vertexNormal = vertex.normal;
+	normal = vertexNormal;
 	viewPositionWS = constants.viewPositionWS;
 }

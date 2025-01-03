@@ -2,6 +2,7 @@
 #include "MeshImporter.hpp"
 
 #include <queue>
+#include <stack>
 
 using namespace Framework;
 using namespace Framework::Graphics;
@@ -24,6 +25,11 @@ void Scene::CreateResources(const VulkanContext& context)
 													  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 													  .descriptorCount = 1,
 													  .stageFlags = VK_SHADER_STAGE_ALL,
+													  .pImmutableSamplers = nullptr },
+						VkDescriptorSetLayoutBinding{ .binding = 3,
+													  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+													  .descriptorCount = 1,
+													  .stageFlags = VK_SHADER_STAGE_ALL,
 													  .pImmutableSamplers = nullptr } };
 
 		const auto descriptorSetLayoutCreateInfo =
@@ -37,19 +43,20 @@ void Scene::CreateResources(const VulkanContext& context)
 														&geometryDescriptorSetLayout);
 		assert(result == VK_SUCCESS);
 		context.SetObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, (uint64_t)geometryDescriptorSetLayout,
-								   "geometryDSLayout");
+								   "Uniform Geometry Buffer Descriptor Set Layout");
 	}
 
 	{
-		const auto poolSize = VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 3 };
+		const auto poolSizes =
+			std::array{ VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 4 } };
 
 		const auto descriptorPoolCreateInfo =
 			VkDescriptorPoolCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 										.pNext = nullptr,
 										.flags = 0,
 										.maxSets = 1,
-										.poolSizeCount = 1,
-										.pPoolSizes = &poolSize };
+										.poolSizeCount = static_cast<U32>(poolSizes.size()),
+										.pPoolSizes = poolSizes.data() };
 		const auto result =
 			vkCreateDescriptorPool(context.device, &descriptorPoolCreateInfo, nullptr, &geometryDescriptorPool);
 		assert(result == VK_SUCCESS);
@@ -89,10 +96,11 @@ void Scene::CreateResources(const VulkanContext& context)
 
 	geometryBuffer =
 		context.CreateBuffer({ 128 * 1024 * 1024, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-							   MemoryUsage::gpu, "Global Vertex Buffer" });
-	geometryIndexBuffer =
-		context.CreateBuffer({ 128 * 1024 * 1024, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-							   MemoryUsage::gpu, "Global Index Buffer" });
+							   MemoryUsage::gpu, "Unified Geometry Buffer" });
+
+	geometryLookupTableBuffer = context.CreateBuffer(
+		{ 32 * 1024, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::gpu, "Global Geometry Lookup Table Buffer" });
+
 	stagingBuffer = context.CreateBuffer(
 		{ stagingBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::upload, "Geometry Staging Buffer" });
 	subMeshesBuffer = context.CreateBuffer({ sizeof(U32) * 2 * 1024,
@@ -110,13 +118,18 @@ void Scene::CreateResources(const VulkanContext& context)
 	}
 
 	{
+		const auto geometryLookupTableBufferInfo =
+			VkDescriptorBufferInfo{ .buffer = geometryLookupTableBuffer.buffer, .offset = 0, .range = VK_WHOLE_SIZE };
+
 		const auto geometryBufferInfo =
 			VkDescriptorBufferInfo{ .buffer = geometryBuffer.buffer, .offset = 0, .range = VK_WHOLE_SIZE };
 
-		const auto geometryIndexBufferInfo =
-			VkDescriptorBufferInfo{ .buffer = geometryIndexBuffer.buffer, .offset = 0, .range = VK_WHOLE_SIZE };
+
 		const auto subMeshesBufferInfo =
 			VkDescriptorBufferInfo{ .buffer = subMeshesBuffer.buffer, .offset = 0, .range = VK_WHOLE_SIZE };
+		const auto dynamicUniformBufferInfo = VkDescriptorBufferInfo{
+			.buffer = context.dynamicUniformAllocator.buffer.buffer, .offset = 0, .range = VK_WHOLE_SIZE
+		};
 		const auto dsWrites = std::array{ VkWriteDescriptorSet{
 											  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 											  .pNext = nullptr,
@@ -126,7 +139,7 @@ void Scene::CreateResources(const VulkanContext& context)
 											  .descriptorCount = 1,
 											  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 											  .pImageInfo = nullptr,
-											  .pBufferInfo = &geometryBufferInfo,
+											  .pBufferInfo = &geometryLookupTableBufferInfo,
 											  .pTexelBufferView = nullptr,
 										  },
 										  VkWriteDescriptorSet{
@@ -138,7 +151,7 @@ void Scene::CreateResources(const VulkanContext& context)
 											  .descriptorCount = 1,
 											  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 											  .pImageInfo = nullptr,
-											  .pBufferInfo = &geometryIndexBufferInfo,
+											  .pBufferInfo = &geometryBufferInfo,
 											  .pTexelBufferView = nullptr,
 										  },
 										  VkWriteDescriptorSet{
@@ -152,19 +165,61 @@ void Scene::CreateResources(const VulkanContext& context)
 											  .pImageInfo = nullptr,
 											  .pBufferInfo = &subMeshesBufferInfo,
 											  .pTexelBufferView = nullptr,
+										  },
+										  VkWriteDescriptorSet{
+											  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+											  .pNext = nullptr,
+											  .dstSet = geometryDescriptorSet,
+											  .dstBinding = 3,
+											  .dstArrayElement = 0,
+											  .descriptorCount = 1,
+											  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+											  .pImageInfo = nullptr,
+											  .pBufferInfo = &dynamicUniformBufferInfo,
+											  .pTexelBufferView = nullptr,
 										  } };
 		vkUpdateDescriptorSets(context.device, dsWrites.size(), dsWrites.data(), 0, nullptr);
 	}
+
+
+	{
+		const auto pushConstants = std::array{ VkPushConstantRange{
+			.stageFlags = VK_SHADER_STAGE_ALL, .offset = 0, .size = sizeof(WorkgroupItemArguments) } };
+
+		const auto setLayouts = std::array{ geometryDescriptorSetLayout };
+
+		const auto pipelineLayoutCreateInfo =
+			VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+										.pNext = nullptr,
+										.flags = 0,
+										.setLayoutCount = static_cast<uint32_t>(setLayouts.size()),
+										.pSetLayouts = setLayouts.data(),
+										.pushConstantRangeCount = static_cast<uint32_t>(pushConstants.size()),
+										.pPushConstantRanges = pushConstants.data() };
+		const auto result = vkCreatePipelineLayout(context.device, &pipelineLayoutCreateInfo, nullptr,
+												   &lookupTableUpdatePipelineLayout.layout);
+		assert(result == VK_SUCCESS);
+	}
+
+	const auto shaderCode = context.LoadShaderFileAsText("Assets/Shaders/UnifiedGeometryBufferLookupTableUpdate.comp");
+	lookupTableUpdatePipeline = context.CreateComputePipeline(
+		ComputePipelineDesc{ .computeShader = { .name = "UnifiedGeometryBuffer",
+												.source = shaderCode,
+												.entryPoint = "unifiedGeometryBuffer_VirtualLookupTableUpdate" },
+							 .pipelineLayout = PipelineLayout{ .layout = lookupTableUpdatePipelineLayout.layout } });
 }
 
 void Scene::ReleaseResources(const VulkanContext& context)
 {
 	vkDestroyFence(context.device, stagingBufferReuse, nullptr);
 
+	context.DestroyBuffer(geometryLookupTableBuffer);
 	context.DestroyBuffer(geometryBuffer);
-	context.DestroyBuffer(geometryIndexBuffer);
 	context.DestroyBuffer(stagingBuffer);
 	context.DestroyBuffer(subMeshesBuffer);
+
+	vkDestroyPipelineLayout(context.device, lookupTableUpdatePipelineLayout.layout, nullptr);
+	context.DestroyComputePipeline(lookupTableUpdatePipeline);
 
 	vkDestroyDescriptorSetLayout(context.device, geometryDescriptorSetLayout, nullptr);
 	vkDestroyDescriptorPool(context.device, geometryDescriptorPool, nullptr);
@@ -177,31 +232,35 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 
 	auto importer = Framework::AssetImporter(std::filesystem::path{ mesh });
 
-	const auto importSettings = Framework::MeshImportSettings{
-		.verticesStreamDeclarations = { Framework::VerticesStreamDeclaration{
-			.hasPosition = true, .hasNormal = true, .hasTextureCoordinate0 = true, .hasJointsIndexAndWeights = true } }
-	};
+	const auto importSettings =
+		Framework::MeshImportSettings{ .verticesStreamDeclarations = { Framework::VerticesStreamDeclaration{
+										   .hasPosition = true, .hasNormal = true, .hasTextureCoordinate0 = true,
+										   /*.hasJointsIndexAndWeights = true*/ } } };
 
 	const auto& info = importer.GetSceneInformation();
 
-	auto indexOffset = 0u;
-	auto vertexOffset = 0u;
-	const auto skeleton = importer.ImportSkeleton(0);
-	skeletons.push_back(skeleton);
-	const auto animations = importer.LoadAllAnimations(skeleton, 60);
+	auto geometryByteOffset = 0u;
 
-	animationDataSet.animationDatabase.insert(animationDataSet.animationDatabase.end(),
-											  animations.animationDatabase.begin(), animations.animationDatabase.end());
+	const auto hasSkeletonAnimations = false;
+	if (hasSkeletonAnimations)
+	{
 
-	animationDataSet.animations.insert(animationDataSet.animations.end(), animations.animations.begin(),
-									   animations.animations.end());
+		const auto skeleton = importer.ImportSkeleton(0);
+		skeletons.push_back(skeleton);
+		const auto animations = importer.LoadAllAnimations(skeleton, 60);
 
+		animationDataSet.animationDatabase.insert(animationDataSet.animationDatabase.end(),
+												  animations.animationDatabase.begin(),
+												  animations.animationDatabase.end());
+
+		animationDataSet.animations.insert(animationDataSet.animations.end(), animations.animations.begin(),
+										   animations.animations.end());
+	}
 	struct DataUploadRegion
 	{
 		uint64_t memoryPtr;
 		uint32_t offset;
 		uint32_t size;
-		bool isIndexData{ false };
 	};
 
 	std::queue<DataUploadRegion> uploadRequests;
@@ -212,7 +271,7 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 		{
 			const auto uploadSize = i < buckets - 1 ? stagingBufferSize : mesh.indexStream.size() % stagingBufferSize;
 			uploadRequests.push(DataUploadRegion{ (uint64_t)mesh.indexStream.data(), (uint32_t)(i * stagingBufferSize),
-												  (uint32_t)uploadSize, true });
+												  (uint32_t)uploadSize });
 		}
 
 		buckets = (mesh.streams[0].data.size() + stagingBufferSize) / stagingBufferSize;
@@ -221,12 +280,10 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 			const auto uploadSize =
 				i < buckets - 1 ? stagingBufferSize : mesh.streams[0].data.size() % stagingBufferSize;
 			uploadRequests.push(DataUploadRegion{ (uint64_t)mesh.streams[0].data.data(),
-												  (uint32_t)(i * stagingBufferSize), (uint32_t)uploadSize, false });
+												  (uint32_t)(i * stagingBufferSize), (uint32_t)uploadSize });
 		}
 	};
 
-	const auto indexByteOffset = geometryIndexBufferFreeOffset;
-	const auto vertexByteOffset = geometryBufferFreeOffset;
 
 	for (auto i = 0; i < info.meshCount; i++)
 	{
@@ -240,18 +297,18 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 				meshData.streams[0].streamDescriptor.attributes[j].componentSize;
 		}
 
-		const auto baseIndex = indexByteOffset / 4;
-		const auto baseVertex = vertexByteOffset / vertexSize;
+		this->meshes.push_back(IndexedStaticMesh{
+			.indicesOffset = (geometryBufferFreeOffset + geometryByteOffset) / 4,
+			.indicesCount = static_cast<uint32_t>(meshData.indexStream.size() / 4),
+			.verticesOffset =
+				(geometryBufferFreeOffset + geometryByteOffset + static_cast<uint32_t>(meshData.indexStream.size())) /
+				4,
+			.verticesCount = static_cast<uint32_t>(meshData.streams[0].data.size() / vertexSize),
+		});
+		// geometryByteOffset += static_cast<uint32_t>(meshData.indexStream.size());
+		// geometryByteOffset += static_cast<uint32_t>(meshData.streams[0].data.size());
 
-		this->meshes.push_back(
-			IndexedStaticMesh{ .indicesOffset = baseIndex + indexOffset,
-							   .indicesCount = static_cast<uint32_t>(meshData.indexStream.size() / 4),
-							   .verticesOffset = baseVertex + vertexOffset,
-							   .verticesCount = static_cast<uint32_t>(meshData.streams[0].data.size() / vertexSize),
-							   .stride = vertexSize });
-		indexOffset += static_cast<uint32_t>(meshData.indexStream.size() / 4);
-		vertexOffset += static_cast<uint32_t>(meshData.streams[0].data.size() / vertexSize);
-
+		this->modelMatrices.push_back(importer.getModelMatrix(i));
 
 		while (!uploadRequests.empty())
 		{
@@ -268,26 +325,20 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 			uploadRequests.pop();
 
 
-			const auto isIndexData = request.isIndexData;
-
 			std::memcpy(stagingBuffer.mappedPtr, (char*)request.memoryPtr + request.offset, request.size);
-			vmaFlushAllocation(context.allocator,
-							   isIndexData ? geometryIndexBuffer.allocation : geometryBuffer.allocation, 0,
-							   stagingBufferSize);
-			const auto region =
-				VkBufferCopy2{ .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
-							   .pNext = nullptr,
-							   .srcOffset = 0,
-							   .dstOffset = isIndexData ? geometryIndexBufferFreeOffset : geometryBufferFreeOffset,
-							   .size = request.size };
+			vmaFlushAllocation(context.allocator, geometryBuffer.allocation, 0, stagingBufferSize);
+			const auto region = VkBufferCopy2{ .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+											   .pNext = nullptr,
+											   .srcOffset = 0,
+											   .dstOffset = geometryBufferFreeOffset,
+											   .size = request.size };
 
-			const auto copyBufferInfo =
-				VkCopyBufferInfo2{ .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
-								   .pNext = nullptr,
-								   .srcBuffer = stagingBuffer.buffer,
-								   .dstBuffer = isIndexData ? geometryIndexBuffer.buffer : geometryBuffer.buffer,
-								   .regionCount = 1,
-								   .pRegions = &region };
+			const auto copyBufferInfo = VkCopyBufferInfo2{ .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+														   .pNext = nullptr,
+														   .srcBuffer = stagingBuffer.buffer,
+														   .dstBuffer = geometryBuffer.buffer,
+														   .regionCount = 1,
+														   .pRegions = &region };
 
 			{
 				const auto beginInfo = VkCommandBufferBeginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -325,14 +376,8 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 			const auto result = vkQueueSubmit2(context.transferQueue, 1, &submit, stagingBufferReuse);
 			assert(result == VK_SUCCESS);
 
-			if (isIndexData)
-			{
-				geometryIndexBufferFreeOffset += request.size;
-			}
-			else
-			{
-				geometryBufferFreeOffset += request.size;
-			}
+
+			geometryBufferFreeOffset += request.size;
 		}
 	}
 
@@ -348,7 +393,6 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 	{
 		U32 indexBase;
 		U32 vertexBase;
-		U32 vertexStride;
 	};
 
 
@@ -356,7 +400,7 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 
 	for (auto i = 0; i < meshes.size(); i++)
 	{
-		subMeshes.push_back({ meshes[i].indicesOffset, meshes[i].verticesOffset, meshes[i].stride });
+		subMeshes.push_back({ meshes[i].indicesOffset, meshes[i].verticesOffset });
 	}
 
 	std::memcpy(stagingBuffer.mappedPtr, (char*)subMeshes.data(), subMeshes.size() * sizeof(SubMesh));
@@ -409,4 +453,94 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 	};
 	const auto result = vkQueueSubmit2(context.transferQueue, 1, &submit, stagingBufferReuse);
 	assert(result == VK_SUCCESS);
+}
+
+
+void ManageUGB()
+{
+	constexpr auto totalLookupTableEntries = 1024;
+	struct LookupTableEntry
+	{
+		U32 pageIndex;
+		U32 physicalPageIndex;
+	};
+
+	struct LookupTable
+	{
+		std::array<LookupTableEntry, totalLookupTableEntries> entries;
+	};
+
+
+	struct Page
+	{
+		U32 bufferOffset;
+	};
+
+
+	std::stack<U32> freePages;
+
+	/*
+		GeometryData{ virtualAddress, size}
+
+
+
+		const auto pages = UGB.allocatePages(geometryAsset.geometryData);
+
+		TaskSystem::queueIoTask( [&, pages, geometryAsset???]()
+			{
+				loadAssetData(geometryAsset);
+				uploadDataToUGB(geometryAsset, pages);
+
+				UGB.notifyAssetLoaded(geometryAsset, pages);
+			});
+
+
+
+		UGB.updatePendingPages(); // iterates over all pending pages and check if they are loaded
+		UGB.enqueueLookupTableUpdate(cmd); // generates lookup table fix dispatch
+
+
+
+	*/
+}
+
+void Framework::Scene::UpdateUnifiedGeometryBufferLookup(VkCommandBuffer cmd)
+{
+
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, lookupTableUpdatePipeline.pipeline);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, lookupTableUpdatePipelineLayout.layout, 0, 1,
+							&geometryDescriptorSet, 0, nullptr);
+	const auto args = WorkgroupItemArguments{ 0, 2 };
+	vkCmdPushConstants(cmd, lookupTableUpdatePipelineLayout.layout, VK_SHADER_STAGE_ALL, 0,
+					   sizeof(WorkgroupItemArguments), &args);
+	vkCmdDispatch(cmd, 1, 1, 1);
+
+
+	const auto bufferMemoryBarrier = VkBufferMemoryBarrier2{
+		.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+		.pNext = nullptr,
+		.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+		.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
+		.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+		.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.buffer = geometryLookupTableBuffer.buffer,
+		.offset = 0,
+		.size = VK_WHOLE_SIZE,
+	};
+
+	const auto dependencyInfo = VkDependencyInfo{
+		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		.pNext = nullptr,
+		.dependencyFlags = 0,
+		.memoryBarrierCount = 0,
+		.pMemoryBarriers = nullptr,
+		.bufferMemoryBarrierCount = 1,
+		.pBufferMemoryBarriers = &bufferMemoryBarrier,
+		.imageMemoryBarrierCount = 0,
+		.pImageMemoryBarriers = nullptr,
+	};
+
+	vkCmdPipelineBarrier2(cmd, &dependencyInfo);
 }

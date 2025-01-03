@@ -1,7 +1,8 @@
 #pragma once
 
-#include <cstdint>
 #include <assert.h>
+#include <bit>
+#include <cstdint>
 #include <format>
 
 template <typename... Args>
@@ -35,5 +36,13 @@ namespace Framework
 	inline constexpr U32 As<U32, F32>(F32 x)
 	{
 		return static_cast<U32>(x);
+	}
+
+	inline void* AlignUp(void* ptr, U8 alignment)
+	{
+		assert(std::has_single_bit(alignment));
+		intptr_t value = reinterpret_cast<intptr_t>(ptr);
+		value += (-value) & (alignment - 1);
+		return reinterpret_cast<void*>(value);
 	}
 } // namespace Framework

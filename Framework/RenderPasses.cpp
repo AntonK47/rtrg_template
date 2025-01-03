@@ -84,10 +84,7 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout.layout, 0,
 								static_cast<uint32_t>(descriptorSets.size()), descriptorSets.data(), 0, nullptr);
 
-		const auto gridSize = 10;
-
-		const auto modelRotation =
-			glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+		const auto gridSize = 1;
 
 		for (auto psoIndex = 0; psoIndex < psoCache.size(); psoIndex++)
 		{
@@ -98,13 +95,12 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 				{
 					for (auto m = 0; m < gridSize; m++)
 					{
-						const auto model = glm::translate(modelRotation, Math::Vector3{ 2.0f * l, 2.0f * k, 2.0f * m });
-
-						constantsData.model = model;
-						vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
-										   sizeof(ConstantsData), &constantsData);
+						
 						for (auto i = psoIndex; i < scene.meshes.size(); i += 3)
 						{
+							constantsData.model = scene.modelMatrices[i];
+							vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
+										   sizeof(ConstantsData), &constantsData);
 							auto& mesh = scene.meshes[i];
 							vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
 						}
@@ -234,7 +230,7 @@ void BasicGeometryPass::CreateResources(const VulkanContext& context, Scene& sce
 	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/BasicSkinnedGeometry.vert");
 	const auto fragmentShader = context.LoadShaderFileAsText("Assets/Shaders/BasicGeometry.frag");
 	pipeline = context.CreateGraphicsPipeline(
-		GraphicsPipelineDesc{ .vertexShader = { "BasicSkinnedGeometry.vert", vertexShader,  "main" },
+		GraphicsPipelineDesc{ .vertexShader = { "BasicSkinnedGeometry.vert", vertexShader, "main" },
 							  .fragmentShader = { "BasicGeometry.frag", fragmentShader },
 							  .renderTargets = { Format::rgba8unorm },
 							  .depthRenderTarget = depthFormat,

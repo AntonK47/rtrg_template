@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include "Animation.hpp"
 
@@ -113,9 +114,12 @@ namespace Framework
 			return currentlyLoadedScene != nullptr;
 		}
 
+		const Math::Matrix4x4 getModelMatrix(U32 meshIndex) const;
+
 	private:
 		const aiScene* currentlyLoadedScene{ nullptr };
 		SceneInformation sceneInformation{};
 		Assimp::Importer importer;
+		std::unordered_map<std::string, Math::Matrix4x4> modelNameTransformMap{};
 	};
 } // namespace Framework

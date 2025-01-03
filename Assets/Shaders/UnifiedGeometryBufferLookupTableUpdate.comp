@@ -1,0 +1,48 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+#include "UnifiedGeometryBuffer.Shared.Common.Library.h"
+
+layout(set=UNIFIED_GEOMETRY_BUFFER_BASE_SET, binding=0) buffer unifiedGeometryBufferLookupTableBlock
+{
+	uint unifiedGeometryBufferLookupTable[];
+};
+
+layout(set=0, binding=3) readonly buffer unifiedOpaqueBufferUpdates
+{
+	uint unifiedOpaqueBuffer[16*1024*1024];
+};
+
+layout(push_constant) uniform workgroupItemArgumentsBlock
+{
+	uint argumentsOffset;
+	uint count;
+} workgroupItemArguments;
+
+struct VirtualLookupTableUpdate
+{
+	uint entryIndex;
+	uint physicalByteOffset;
+};
+
+#define VIRTUAL_LOOKUP_TABLE_UPDATE_SIZE 2
+
+VirtualLookupTableUpdate decode(in uint offset, in uint index)
+{
+	uint lookupIndex = offset  + index * VIRTUAL_LOOKUP_TABLE_UPDATE_SIZE;
+	VirtualLookupTableUpdate update;
+	update.entryIndex = unifiedOpaqueBuffer[lookupIndex];
+	update.physicalByteOffset = unifiedOpaqueBuffer[lookupIndex + 1];
+	return update;
+}	
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+void unifiedGeometryBuffer_VirtualLookupTableUpdate()
+{
+	if(gl_GlobalInvocationID.x < workgroupItemArguments.count)
+	{
+		VirtualLookupTableUpdate update = decode(workgroupItemArguments.argumentsOffset, gl_GlobalInvocationID.x);
+
+		unifiedGeometryBufferLookupTable[update.entryIndex] = update.physicalByteOffset;
+	}
+}
