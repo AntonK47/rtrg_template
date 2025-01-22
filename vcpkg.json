@@ -8,6 +8,7 @@
     "vulkan-headers",
     "vulkan-memory-allocator",
     "assimp",
+    "mpmcqueue",
     {
       "name": "stduuid",
       "features": [ "system-gen" ]

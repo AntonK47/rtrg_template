@@ -8,6 +8,7 @@
 #include "VulkanRHI.hpp"
 
 #include "Memory.hpp"
+#include "StreamingSystem.hpp"
 
 using namespace Framework;
 using namespace Framework::Animation;
@@ -216,7 +217,24 @@ void Framework::Application::Run()
 				basicRenderPipeline.GetScene().Upload("Assets/Meshes/after_the_rain..._-_vr__sound/scene.gltf", vulkanContext);
 			}
 
-/*
+			if (ImGui::Button("add task"))
+			{
+				/*basicRenderPipeline.unifiedGeometryBuffer.RequestSubMesh({});*/
+				for(auto i = 0; i< 10; i++)
+				{
+					streamingSystem.Request({ []()
+										  {
+											  volatile auto b = 0;
+											  for (auto i = 0; i < 130000000; i++)
+											  {
+												  b += i;
+												  volatile auto c = b;
+											  }
+										  } });
+					}
+			}
+
+			/*
 			static float animationTime = 0.0f;
 			static bool useGlobalTimeInAnimation = true;
 			static int selectedAnimation = 0;
@@ -352,6 +370,7 @@ void Framework::Application::Run()
 	}
 #pragma region Cleanup
 	vulkanContext.WaitIdle();
+	streamingSystem.Deinitialize();
 	guiSystem.Deinitialize();
 	basicRenderPipeline.Deinitialize(vulkanContext);
 	vulkanContext.Deinitialize();
