@@ -16,7 +16,7 @@ namespace Framework
 		U32 verticesOffset;
 		U32 verticesCount;
 	};
-	};
+
 
 	struct Scene
 	{
@@ -25,41 +25,23 @@ namespace Framework
 
 		void Upload(const std::string_view mesh, const Graphics::VulkanContext& context);
 
+		void AddModel(const IndexedStaticMesh& mesh, const Math::Matrix4x4& transform);
 
-		/*struct GpuSubMesh
-		{
-		};
 
-		struct GpuScene
-		{
-			void UpdateInstances(Scene& scene)
-			{
-			}
-
-			void AllocateInstances();
-			void AllocateMeshes();
-
-			Graphics::GraphicsBuffer instances;
-			Graphics::GraphicsBuffer meshes;
-			Graphics::GraphicsBuffer lodMeshes;
-			Graphics::GraphicsBuffer subMeshes;
-		};*/
-
+#pragma region Upload
 		static constexpr VkDeviceSize stagingBufferSize{ 1 * 1024 * 1024 };
 		Graphics::GraphicsBuffer stagingBuffer{};
 		VkFence stagingBufferReuse;
+		VkCommandPool commandPool;
+		VkCommandBuffer commandBuffer;
+#pragma endregion
 
 		VkDescriptorPool geometryDescriptorPool;
 		VkDescriptorSet geometryDescriptorSet;
-		VkDescriptorSetLayout geometryDescriptorSetLayout;
-
-
-		VkCommandPool commandPool;
-		VkCommandBuffer commandBuffer;
+		Graphics::BindGroupLayout geometryBindGroupLayout;
 
 		Graphics::GraphicsBuffer geometryBuffer{};
 		U32 geometryBufferFreeOffset{ 0 };
-
 
 		Graphics::GraphicsBuffer subMeshesBuffer{};
 
@@ -68,11 +50,6 @@ namespace Framework
 		Animation::AnimationDataSet animationDataSet;
 		std::vector<Math::Matrix4x4> modelMatrices;
 
-
-		// Unified Geometry Buffer
-		Graphics::GraphicsBuffer geometryLookupTableBuffer{};
-		Graphics::ComputePipeline lookupTableUpdatePipeline{};
-		Graphics::PipelineLayout lookupTableUpdatePipelineLayout{};
 
 		// Skinned Cache
 		Graphics::GraphicsBuffer skinnedCacheBuffer{};

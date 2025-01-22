@@ -55,7 +55,12 @@ PRIVATE
 	Memory.hpp
 	Memory.cpp
 	Profiler.hpp
-	)
+	UnifiedGeometryBuffer.hpp
+	UnifiedGeometryBuffer.cpp
+ 	StreamingSystem.hpp
+ 	StreamingSystem.cpp
+	GpuUploader.hpp
+	GpuUploader.cpp
 	Pool.hpp
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)

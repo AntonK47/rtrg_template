@@ -20,7 +20,7 @@ struct SkinnedVertex
 	vec4 jointWeights;
 };
 
-layout(set=1, binding=0) readonly uniform JointMatricies
+layout(set=2, binding=0) readonly uniform JointMatricies
 {
 	mat4 jointMatricies[256];
 };
@@ -32,7 +32,7 @@ struct SubMesh
 	uint vertexByteBase;
 };
 
-layout(set=0, binding = 2) readonly buffer registeredSubMeshes
+layout(set=0, binding = 1) readonly buffer registeredSubMeshes
 {
 	SubMesh subMeshes[1024];
 };
@@ -47,7 +47,7 @@ layout(push_constant) uniform constantsBlock
 } constants;
 
 
-SkinnedVertex decode(uint baseOffset, uint vertexOffset)
+SkinnedVertex skinnded_vertex_decode(uint baseOffset, uint vertexOffset)
 {
 	vec3 position = UNIFIED_GEOMETRY_BUFFER_GetVec3(baseOffset, vertexOffset);
 	vec3 normal = UNIFIED_GEOMETRY_BUFFER_GetVec3(baseOffset, vertexOffset + 3);
@@ -72,7 +72,7 @@ struct BasicVertex
 	vec2 uv0;
 };
 
-BasicVertex decode_base_vertex(uint baseOffset, uint vertexOffset)
+BasicVertex basic_vertex_decode(uint baseOffset, uint vertexOffset)
 {
 	vec3 position = UNIFIED_GEOMETRY_BUFFER_GetVec3(baseOffset, vertexOffset);
 	vec3 normal = UNIFIED_GEOMETRY_BUFFER_GetVec3(baseOffset, vertexOffset + 3);
@@ -94,10 +94,10 @@ uint decode_base_index(uint baseOffset, uint indexOffset)
 {
 	SubMesh subMesh = subMeshes[gl_InstanceIndex];
 
-	int index = globalGeometryIndexBuffer[gl_VertexIndex + int(subMesh.indexBase)];
+	uint index = decode_base_index(subMesh.indexByteBase, uint(gl_VertexIndex));
 	uint vertexByteOffset = 13 * index;
 
-	SkinnedVertex vertex = decode(subMesh.vertexBase * 13, vertexByteOffset);
+	SkinnedVertex vertex = skinnded_vertex_decode(subMesh.vertexByteBase, vertexByteOffset);
 	//TODO: remove hardcoded byte stide
 
 
@@ -127,7 +127,7 @@ void main()
 	uint index = decode_base_index(subMesh.indexByteBase, uint(gl_VertexIndex));
 	uint vertexByteOffset = 8 * index;
 
-	BasicVertex vertex = decode_base_vertex(subMesh.vertexByteBase, vertexByteOffset);
+	BasicVertex vertex = basic_vertex_decode(subMesh.vertexByteBase, vertexByteOffset);
 	//TODO: remove hardcoded byte stide
 
 

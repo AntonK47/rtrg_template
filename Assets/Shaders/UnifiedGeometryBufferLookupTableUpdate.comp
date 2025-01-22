@@ -2,22 +2,17 @@
 
 #extension GL_GOOGLE_include_directive : require
 #include "UnifiedGeometryBuffer.Shared.Common.Library.h"
+#include "UnifiedUploadHeap.Library.glsl"
 
-layout(set=UNIFIED_GEOMETRY_BUFFER_BASE_SET, binding=0) buffer unifiedGeometryBufferLookupTableBlock
+layout(set=UNIFIED_GEOMETRY_BUFFER_LOOKUP_TABLE_SET, binding=0) buffer unifiedGeometryBufferLookupTableBlock
 {
 	uint unifiedGeometryBufferLookupTable[];
 };
 
-layout(set=0, binding=3) readonly buffer unifiedOpaqueBufferUpdates
+layout(set=UNIFIED_UPLOAD_HEAP_SET, binding=UNIFIED_UPLOAD_HEAP_BINDING) readonly buffer unifiedOpaqueBufferUpdates
 {
 	uint unifiedOpaqueBuffer[16*1024*1024];
 };
-
-layout(push_constant) uniform workgroupItemArgumentsBlock
-{
-	uint argumentsOffset;
-	uint count;
-} workgroupItemArguments;
 
 struct VirtualLookupTableUpdate
 {
@@ -27,7 +22,7 @@ struct VirtualLookupTableUpdate
 
 #define VIRTUAL_LOOKUP_TABLE_UPDATE_SIZE 2
 
-VirtualLookupTableUpdate decode(in uint offset, in uint index)
+VirtualLookupTableUpdate virtual_lookup_table_update_decode(in uint offset, in uint index)
 {
 	uint lookupIndex = offset  + index * VIRTUAL_LOOKUP_TABLE_UPDATE_SIZE;
 	VirtualLookupTableUpdate update;
@@ -41,7 +36,7 @@ void unifiedGeometryBuffer_VirtualLookupTableUpdate()
 {
 	if(gl_GlobalInvocationID.x < workgroupItemArguments.count)
 	{
-		VirtualLookupTableUpdate update = decode(workgroupItemArguments.argumentsOffset, gl_GlobalInvocationID.x);
+		VirtualLookupTableUpdate update = virtual_lookup_table_update_decode(workgroupItemArguments.argumentsOffset, gl_GlobalInvocationID.x);
 
 		unifiedGeometryBufferLookupTable[update.entryIndex] = update.physicalByteOffset;
 	}

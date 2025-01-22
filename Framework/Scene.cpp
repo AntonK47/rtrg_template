@@ -9,46 +9,13 @@ using namespace Framework::Graphics;
 
 void Scene::CreateResources(const VulkanContext& context)
 {
-	{
-		const auto bindings =
-			std::array{ VkDescriptorSetLayoutBinding{ .binding = 0,
-													  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-													  .descriptorCount = 1,
-													  .stageFlags = VK_SHADER_STAGE_ALL,
-													  .pImmutableSamplers = nullptr },
-						VkDescriptorSetLayoutBinding{ .binding = 1,
-													  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-													  .descriptorCount = 1,
-													  .stageFlags = VK_SHADER_STAGE_ALL,
-													  .pImmutableSamplers = nullptr },
-						VkDescriptorSetLayoutBinding{ .binding = 2,
-													  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-													  .descriptorCount = 1,
-													  .stageFlags = VK_SHADER_STAGE_ALL,
-													  .pImmutableSamplers = nullptr },
-						VkDescriptorSetLayoutBinding{ .binding = 3,
-													  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-													  .descriptorCount = 1,
-													  .stageFlags = VK_SHADER_STAGE_ALL,
-													  .pImmutableSamplers = nullptr } };
-
-		const auto descriptorSetLayoutCreateInfo =
-			VkDescriptorSetLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-											 .pNext = nullptr,
-											 .flags = 0, // VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT,
-											 .bindingCount = bindings.size(),
-											 .pBindings = bindings.data() };
-
-		const auto result = vkCreateDescriptorSetLayout(context.device, &descriptorSetLayoutCreateInfo, nullptr,
-														&geometryDescriptorSetLayout);
-		assert(result == VK_SUCCESS);
-		context.SetObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, (uint64_t)geometryDescriptorSetLayout,
-								   "Uniform Geometry Buffer Descriptor Set Layout");
-	}
+	geometryBindGroupLayout = context.CreateBindGroupLayout(
+		BindGroupLayoutDesc{ .bindings = { StorageBufferBinding{}, StorageBufferBinding{}, StorageBufferBinding{} },
+							 .debugName = "Uniform Geometry Buffer Descriptor Set Layout" });
 
 	{
 		const auto poolSizes =
-			std::array{ VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 4 } };
+			std::array{ VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 3 } };
 
 		const auto descriptorPoolCreateInfo =
 			VkDescriptorPoolCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -67,7 +34,7 @@ void Scene::CreateResources(const VulkanContext& context)
 										 .pNext = nullptr,
 										 .descriptorPool = geometryDescriptorPool,
 										 .descriptorSetCount = 1,
-										 .pSetLayouts = &geometryDescriptorSetLayout };
+										 .pSetLayouts = &geometryBindGroupLayout.layout };
 		const auto result = vkAllocateDescriptorSets(context.device, &allocationInfo, &geometryDescriptorSet);
 		assert(result == VK_SUCCESS);
 		context.SetObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET, (uint64_t)geometryDescriptorSet, "geometryDS");
@@ -98,8 +65,6 @@ void Scene::CreateResources(const VulkanContext& context)
 		context.CreateBuffer({ 128 * 1024 * 1024, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 							   MemoryUsage::gpu, "Unified Geometry Buffer" });
 
-	geometryLookupTableBuffer = context.CreateBuffer(
-		{ 32 * 1024, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::gpu, "Global Geometry Lookup Table Buffer" });
 
 	stagingBuffer = context.CreateBuffer(
 		{ stagingBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::upload, "Geometry Staging Buffer" });
@@ -118,12 +83,8 @@ void Scene::CreateResources(const VulkanContext& context)
 	}
 
 	{
-		const auto geometryLookupTableBufferInfo =
-			VkDescriptorBufferInfo{ .buffer = geometryLookupTableBuffer.buffer, .offset = 0, .range = VK_WHOLE_SIZE };
-
 		const auto geometryBufferInfo =
 			VkDescriptorBufferInfo{ .buffer = geometryBuffer.buffer, .offset = 0, .range = VK_WHOLE_SIZE };
-
 
 		const auto subMeshesBufferInfo =
 			VkDescriptorBufferInfo{ .buffer = subMeshesBuffer.buffer, .offset = 0, .range = VK_WHOLE_SIZE };
@@ -139,7 +100,7 @@ void Scene::CreateResources(const VulkanContext& context)
 											  .descriptorCount = 1,
 											  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 											  .pImageInfo = nullptr,
-											  .pBufferInfo = &geometryLookupTableBufferInfo,
+											  .pBufferInfo = &geometryBufferInfo,
 											  .pTexelBufferView = nullptr,
 										  },
 										  VkWriteDescriptorSet{
@@ -151,7 +112,7 @@ void Scene::CreateResources(const VulkanContext& context)
 											  .descriptorCount = 1,
 											  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 											  .pImageInfo = nullptr,
-											  .pBufferInfo = &geometryBufferInfo,
+											  .pBufferInfo = &subMeshesBufferInfo,
 											  .pTexelBufferView = nullptr,
 										  },
 										  VkWriteDescriptorSet{
@@ -163,65 +124,23 @@ void Scene::CreateResources(const VulkanContext& context)
 											  .descriptorCount = 1,
 											  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 											  .pImageInfo = nullptr,
-											  .pBufferInfo = &subMeshesBufferInfo,
-											  .pTexelBufferView = nullptr,
-										  },
-										  VkWriteDescriptorSet{
-											  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-											  .pNext = nullptr,
-											  .dstSet = geometryDescriptorSet,
-											  .dstBinding = 3,
-											  .dstArrayElement = 0,
-											  .descriptorCount = 1,
-											  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-											  .pImageInfo = nullptr,
 											  .pBufferInfo = &dynamicUniformBufferInfo,
 											  .pTexelBufferView = nullptr,
 										  } };
 		vkUpdateDescriptorSets(context.device, dsWrites.size(), dsWrites.data(), 0, nullptr);
 	}
-
-
-	{
-		const auto pushConstants = std::array{ VkPushConstantRange{
-			.stageFlags = VK_SHADER_STAGE_ALL, .offset = 0, .size = sizeof(WorkgroupItemArguments) } };
-
-		const auto setLayouts = std::array{ geometryDescriptorSetLayout };
-
-		const auto pipelineLayoutCreateInfo =
-			VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-										.pNext = nullptr,
-										.flags = 0,
-										.setLayoutCount = static_cast<uint32_t>(setLayouts.size()),
-										.pSetLayouts = setLayouts.data(),
-										.pushConstantRangeCount = static_cast<uint32_t>(pushConstants.size()),
-										.pPushConstantRanges = pushConstants.data() };
-		const auto result = vkCreatePipelineLayout(context.device, &pipelineLayoutCreateInfo, nullptr,
-												   &lookupTableUpdatePipelineLayout.layout);
-		assert(result == VK_SUCCESS);
-	}
-
-	const auto shaderCode = context.LoadShaderFileAsText("Assets/Shaders/UnifiedGeometryBufferLookupTableUpdate.comp");
-	lookupTableUpdatePipeline = context.CreateComputePipeline(
-		ComputePipelineDesc{ .computeShader = { .name = "UnifiedGeometryBuffer",
-												.source = shaderCode,
-												.entryPoint = "unifiedGeometryBuffer_VirtualLookupTableUpdate" },
-							 .pipelineLayout = PipelineLayout{ .layout = lookupTableUpdatePipelineLayout.layout } });
 }
 
 void Scene::ReleaseResources(const VulkanContext& context)
 {
 	vkDestroyFence(context.device, stagingBufferReuse, nullptr);
 
-	context.DestroyBuffer(geometryLookupTableBuffer);
+
 	context.DestroyBuffer(geometryBuffer);
 	context.DestroyBuffer(stagingBuffer);
 	context.DestroyBuffer(subMeshesBuffer);
+	context.DestroyBindGroupLayout(geometryBindGroupLayout);
 
-	vkDestroyPipelineLayout(context.device, lookupTableUpdatePipelineLayout.layout, nullptr);
-	context.DestroyComputePipeline(lookupTableUpdatePipeline);
-
-	vkDestroyDescriptorSetLayout(context.device, geometryDescriptorSetLayout, nullptr);
 	vkDestroyDescriptorPool(context.device, geometryDescriptorPool, nullptr);
 
 	vkDestroyCommandPool(context.device, commandPool, nullptr);
@@ -229,7 +148,6 @@ void Scene::ReleaseResources(const VulkanContext& context)
 
 void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 {
-
 	auto importer = Framework::AssetImporter(std::filesystem::path{ mesh });
 
 	const auto importSettings =
@@ -256,6 +174,7 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 		animationDataSet.animations.insert(animationDataSet.animations.end(), animations.animations.begin(),
 										   animations.animations.end());
 	}
+
 	struct DataUploadRegion
 	{
 		uint64_t memoryPtr;
@@ -341,6 +260,11 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 														   .pRegions = &region };
 
 			{
+				const auto result = vkResetCommandPool(context.device, commandPool, 0);
+				assert(result == VK_SUCCESS);
+			}
+
+			{
 				const auto beginInfo = VkCommandBufferBeginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 																 .pNext = nullptr,
 																 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -376,7 +300,6 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 			const auto result = vkQueueSubmit2(context.transferQueue, 1, &submit, stagingBufferReuse);
 			assert(result == VK_SUCCESS);
 
-
 			geometryBufferFreeOffset += request.size;
 		}
 	}
@@ -389,12 +312,12 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 		const auto result = vkResetFences(context.device, 1, &stagingBufferReuse);
 		assert(result == VK_SUCCESS);
 	}
+
 	struct SubMesh
 	{
 		U32 indexBase;
 		U32 vertexBase;
 	};
-
 
 	auto subMeshes = std::vector<SubMesh>{};
 
@@ -417,7 +340,10 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 												   .dstBuffer = subMeshesBuffer.buffer,
 												   .regionCount = 1,
 												   .pRegions = &region };
-
+	{
+		const auto result = vkResetCommandPool(context.device, commandPool, 0);
+		assert(result == VK_SUCCESS);
+	}
 	{
 		const auto beginInfo = VkCommandBufferBeginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 														 .pNext = nullptr,
@@ -453,6 +379,12 @@ void Scene::Upload(const std::string_view mesh, const VulkanContext& context)
 	};
 	const auto result = vkQueueSubmit2(context.transferQueue, 1, &submit, stagingBufferReuse);
 	assert(result == VK_SUCCESS);
+}
+
+void Framework::Scene::AddModel(const IndexedStaticMesh& mesh, const Math::Matrix4x4& transform)
+{
+	this->meshes.push_back(mesh);
+	this->modelMatrices.push_back(transform);
 }
 
 
@@ -502,45 +434,4 @@ void ManageUGB()
 
 
 	*/
-}
-
-void Framework::Scene::UpdateUnifiedGeometryBufferLookup(VkCommandBuffer cmd)
-{
-
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, lookupTableUpdatePipeline.pipeline);
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, lookupTableUpdatePipelineLayout.layout, 0, 1,
-							&geometryDescriptorSet, 0, nullptr);
-	const auto args = WorkgroupItemArguments{ 0, 2 };
-	vkCmdPushConstants(cmd, lookupTableUpdatePipelineLayout.layout, VK_SHADER_STAGE_ALL, 0,
-					   sizeof(WorkgroupItemArguments), &args);
-	vkCmdDispatch(cmd, 1, 1, 1);
-
-
-	const auto bufferMemoryBarrier = VkBufferMemoryBarrier2{
-		.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-		.pNext = nullptr,
-		.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-		.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
-		.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
-		.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
-		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.buffer = geometryLookupTableBuffer.buffer,
-		.offset = 0,
-		.size = VK_WHOLE_SIZE,
-	};
-
-	const auto dependencyInfo = VkDependencyInfo{
-		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-		.pNext = nullptr,
-		.dependencyFlags = 0,
-		.memoryBarrierCount = 0,
-		.pMemoryBarriers = nullptr,
-		.bufferMemoryBarrierCount = 1,
-		.pBufferMemoryBarriers = &bufferMemoryBarrier,
-		.imageMemoryBarrierCount = 0,
-		.pImageMemoryBarriers = nullptr,
-	};
-
-	vkCmdPipelineBarrier2(cmd, &dependencyInfo);
 }
