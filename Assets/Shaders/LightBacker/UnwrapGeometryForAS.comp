@@ -1,0 +1,51 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#include "UnifiedGeometryBuffer.Library.glsl" //!#include "../UnifiedGeometryBuffer.Library.glsl"
+
+layout(set = 1, binding = 0) buffer geometryBufferBlock
+{
+	uint data[];
+} geometryBuffer;
+
+layout(push_constant) uniform unwrapConastantsBlock
+{
+	uint offset;
+	uint count;
+	uint stride;
+	uint dstOffset;
+} unwrapConastants;
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+void unwrap_geometry_positions_for_acceleration_structure()
+{
+	if(gl_GlobalInvocationID.x < unwrapConastants.count)
+	{
+		uint offset = unwrapConastants.stride * gl_GlobalInvocationID.x;
+
+		uint uintValueIndex0 = unwrapConastants.offset;
+		uint uintValueIndex1 = unwrapConastants.offset + 1;
+		uint uintValueIndex2 = unwrapConastants.offset + 2;
+
+		uint data0 = UNIFIED_GEOMETRY_BUFFER_GetPhysicalByteOffset(offset, uintValueIndex0);
+		uint data1 = UNIFIED_GEOMETRY_BUFFER_GetPhysicalByteOffset(offset, uintValueIndex1);
+		uint data2 = UNIFIED_GEOMETRY_BUFFER_GetPhysicalByteOffset(offset, uintValueIndex2);
+		geometryBuffer.data[unwrapConastants.dstOffset + gl_GlobalInvocationID.x * 3 + 0] = unifiedGeometryBuffer[data0];
+		geometryBuffer.data[unwrapConastants.dstOffset + gl_GlobalInvocationID.x * 3 + 1] = unifiedGeometryBuffer[data1];
+		geometryBuffer.data[unwrapConastants.dstOffset + gl_GlobalInvocationID.x * 3 + 2] = unifiedGeometryBuffer[data2];
+	}
+};
+
+void unwrap_geometry_indicies_for_acceleration_structure()
+{
+	if(gl_GlobalInvocationID.x < unwrapConastants.count)
+	{
+		uint offset = unwrapConastants.stride * gl_GlobalInvocationID.x;
+
+		uint uintValueIndex0 = unwrapConastants.offset;
+
+		uint data0 = UNIFIED_GEOMETRY_BUFFER_GetPhysicalByteOffset(offset, uintValueIndex0);
+		geometryBuffer.data[unwrapConastants.dstOffset + gl_GlobalInvocationID.x] = unifiedGeometryBuffer[data0];
+	}
+};

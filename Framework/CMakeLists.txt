@@ -62,6 +62,11 @@ PRIVATE
 	GpuUploader.hpp
 	GpuUploader.cpp
 	Pool.hpp
+	AccelerationStructureBuilder.hpp
+	AccelerationStructureBuilder.cpp
+	UnwrapGeometryForAccelerationStructurePass.hpp
+	UnwrapGeometryForAccelerationStructurePass.cpp
+ )
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)
 
