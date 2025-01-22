@@ -5,12 +5,14 @@
 
 #include "ImGuiUtils.hpp"
 #include "Profiler.hpp"
+#include "UnifiedGeometryBuffer.hpp"
 
 
 using namespace Framework;
 using namespace Framework::Graphics;
 
 void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTarget, const Scene& scene,
+								const UnifiedGeometryBuffer& unifiedGeometryBuffer,
 								const FrameData::PerFrameResources& frame, const Camera& camera,
 								const WindowViewport windowViewport, F32 deltaTime)
 {
@@ -78,7 +80,9 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 						   &constants);
 
 
-		const auto descriptorSets = std::array{ scene.geometryDescriptorSet, frame.jointsMatricesDescriptorSet };
+		const auto descriptorSets =
+			std::array{ scene.geometryDescriptorSet, unifiedGeometryBuffer.geometryLookupTableDescriptorSet,
+						frame.jointsMatricesDescriptorSet };
 
 
 		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout.layout, 0,
@@ -95,12 +99,12 @@ void BasicGeometryPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTar
 				{
 					for (auto m = 0; m < gridSize; m++)
 					{
-						
+
 						for (auto i = psoIndex; i < scene.meshes.size(); i += 3)
 						{
 							constantsData.model = scene.modelMatrices[i];
 							vkCmdPushConstants(cmd, pipelineLayout.layout, VK_SHADER_STAGE_VERTEX_BIT, 32,
-										   sizeof(ConstantsData), &constantsData);
+											   sizeof(ConstantsData), &constantsData);
 							auto& mesh = scene.meshes[i];
 							vkCmdDraw(cmd, mesh.indicesCount, 1, 0, i);
 						}
@@ -201,31 +205,20 @@ GraphicsPipeline BasicGeometryPass::CompileOpaqueMaterialPsoOnly(const VulkanCon
 	return pipeline;
 }
 
-void BasicGeometryPass::CreateResources(const VulkanContext& context, Scene& scene, FrameData& frameData,
+void BasicGeometryPass::CreateResources(const VulkanContext& context, Scene& scene,
+										UnifiedGeometryBuffer& unifiedGeometryBuffer, FrameData& frameData,
 										const WindowViewport& windowViewport)
 {
 	vulkanContext = &context;
-	{
-		const auto pushConstants = std::array{
-			VkPushConstantRange{
-				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(ShaderToyConstant) },
-			VkPushConstantRange{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 32, .size = sizeof(ConstantsData) }
-		};
 
-		const auto setLayouts = std::array{ scene.geometryDescriptorSetLayout, frameData.frameDescriptorSetLayout };
-
-		const auto pipelineLayoutCreateInfo =
-			VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-										.pNext = nullptr,
-										.flags = 0,
-										.setLayoutCount = static_cast<uint32_t>(setLayouts.size()),
-										.pSetLayouts = setLayouts.data(),
-										.pushConstantRangeCount = static_cast<uint32_t>(pushConstants.size()),
-										.pPushConstantRanges = pushConstants.data() };
-		const auto result =
-			vkCreatePipelineLayout(context.device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout.layout);
-		assert(result == VK_SUCCESS);
-	}
+	pipelineLayout = context.CreatePipelineLayout(
+		{ .bindGroupLayouts = { scene.geometryBindGroupLayout, unifiedGeometryBuffer.geometryLookupTableBindGroupLayout,
+								frameData.frameBindGroupLayout },
+		  .pushConstantRanges = {
+			  VkPushConstantRange{
+				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(ShaderToyConstant) },
+			  VkPushConstantRange{
+				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 32, .size = sizeof(ConstantsData) } } });
 
 	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/BasicSkinnedGeometry.vert");
 	const auto fragmentShader = context.LoadShaderFileAsText("Assets/Shaders/BasicGeometry.frag");
@@ -246,14 +239,13 @@ void BasicGeometryPass::CreateResources(const VulkanContext& context, Scene& sce
 void BasicGeometryPass::ReleaseResources(const VulkanContext& context)
 {
 	ReleaseViewDependentResources(context);
-	vkDestroyPipelineLayout(context.device, pipelineLayout.layout, nullptr);
+	context.DestroyPipelineLayout(pipelineLayout);
 
 	for (auto i = 0; i < psoCache.size(); i++)
 	{
 		context.DestroyGraphicsPipeline(psoCache[i]);
 	}
 }
-
 
 void Framework::Graphics::FullscreenQuadPass::Execute(const VkCommandBuffer& cmd, VkImageView colorTarget,
 													  const WindowViewport windowViewport, F32 deltaTime)
@@ -314,17 +306,7 @@ void FullscreenQuadPass::CreateResources(const VulkanContext& context)
 														.offset = 0,
 														.size = sizeof(ShaderToyConstant) };
 
-	const auto pipelineLayoutCreateInfo =
-		VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-									.pNext = nullptr,
-									.flags = 0,
-									.setLayoutCount = 0,
-									.pSetLayouts = nullptr,
-									.pushConstantRangeCount = 1,
-									.pPushConstantRanges = &pushConstantRange };
-	const auto result =
-		vkCreatePipelineLayout(context.device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout.layout);
-	assert(result == VK_SUCCESS);
+	pipelineLayout = context.CreatePipelineLayout({ {}, { pushConstantRange } });
 
 	const auto vertexShader = context.LoadShaderFileAsText("Assets/Shaders/FullscreenQuad.vert");
 	const auto fragmentShader = context.LoadShaderFileAsText("Assets/Shaders/ShaderToySample.frag");
@@ -341,7 +323,7 @@ void FullscreenQuadPass::CreateResources(const VulkanContext& context)
 }
 void FullscreenQuadPass::ReleaseResources(const VulkanContext& context)
 {
-	vkDestroyPipelineLayout(context.device, pipelineLayout.layout, nullptr);
+	context.DestroyPipelineLayout(pipelineLayout);
 	context.DestroyGraphicsPipeline(pipeline);
 }
 

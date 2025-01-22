@@ -8,6 +8,7 @@
 #include <Windows.h>
 #endif
 
+
 using namespace Framework;
 using namespace Framework::Graphics;
 
@@ -243,8 +244,18 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 
 #pragma region Read Device Limits
 	{
-		VkPhysicalDeviceProperties2 properties{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-												.pNext = nullptr };
+
+
+		auto properties =
+			VkPhysicalDeviceProperties2{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = nullptr };
+
+#ifdef VULKAN_ENABLE_RAYTRACING
+
+		raytracingPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+		raytracingPipelineProperties.pNext = nullptr;
+		properties.pNext = &raytracingPipelineProperties;
+#endif
+
 		vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
 		limits.maxUniformBufferRange = properties.properties.limits.maxUniformBufferRange;
 	}
@@ -252,12 +263,18 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 
 #pragma region Device creation
 	{
-		const auto enabledDeviceExtensions =
-			std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		const auto enabledDeviceExtensions = std::array{
+			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 #ifdef RTRG_ENABLE_PROFILER
-						VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
+			VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
+			VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
 #endif
-			};
+#ifdef VULKAN_ENABLE_RAYTRACING
+			VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+			VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+			VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+#endif
+		};
 
 		const auto queuePriority = 1.0f;
 		const auto queueCreateInfos =
@@ -274,10 +291,15 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 												 .queueCount = 1,
 												 .pQueuePriorities = &queuePriority } };
 
+		auto accelerationStructureFeatures = VkPhysicalDeviceAccelerationStructureFeaturesKHR{};
+		accelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+		accelerationStructureFeatures.pNext = nullptr;
+		accelerationStructureFeatures.accelerationStructure = VK_TRUE;
+		//accelerationStructureFeatures.accelerationStructureHostCommands = VK_TRUE;
 
 		auto physicalDeviceFeatures13 = VkPhysicalDeviceVulkan13Features{};
 		physicalDeviceFeatures13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-		physicalDeviceFeatures13.pNext = nullptr; //&maintenacne5Feautres;
+		physicalDeviceFeatures13.pNext = &accelerationStructureFeatures;
 		physicalDeviceFeatures13.synchronization2 = VK_TRUE;
 		physicalDeviceFeatures13.dynamicRendering = VK_TRUE;
 
@@ -285,6 +307,7 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 		physicalDeviceFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 		physicalDeviceFeatures12.pNext = &physicalDeviceFeatures13;
 		physicalDeviceFeatures12.scalarBlockLayout = VK_TRUE;
+		physicalDeviceFeatures12.bufferDeviceAddress = VK_TRUE;
 #ifdef RTRG_ENABLE_PROFILER
 		physicalDeviceFeatures12.hostQueryReset = VK_TRUE;
 #else
@@ -349,7 +372,7 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 																	 .pfnFree = vmaFreeCallback,
 																	 .pUserData = nullptr };
 
-		const auto allocatorCreateInfo = VmaAllocatorCreateInfo{ .flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT,
+		const auto allocatorCreateInfo = VmaAllocatorCreateInfo{ .flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT | VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
 																 .physicalDevice = physicalDevice,
 																 .device = device,
 #ifdef RTRG_ENABLE_PROFILER
@@ -556,6 +579,7 @@ void VulkanContext::EndDebugLabelName(VkCommandBuffer cmd) const
 
 GraphicsBuffer VulkanContext::CreateBuffer(const BufferDesc&& desc) const
 {
+	assert(desc.size > 0);
 	auto buffer = GraphicsBuffer{};
 
 	const auto bufferInfo = VkBufferCreateInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -653,6 +677,81 @@ std::string Framework::Graphics::VulkanContext::LoadShaderFileAsText(const std::
 	const auto charCount = stream.gcount();
 	shader = shader.substr(0, charCount);
 	return shader;
+}
+
+BindGroupLayout Framework::Graphics::VulkanContext::CreateBindGroupLayout(const BindGroupLayoutDesc&& desc) const
+{
+	auto bindGroupLayout = BindGroupLayout{};
+	auto bindings = std::vector<VkDescriptorSetLayoutBinding>{};
+	bindings.reserve(desc.bindings.size());
+	for (auto i = 0; i < desc.bindings.size(); i++)
+	{
+		auto& binding = *(desc.bindings.begin() + i);
+
+		VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+		if (std::holds_alternative<StorageBufferBinding>(binding))
+		{
+			type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		}
+		if (std::holds_alternative<UniformBufferBinding>(binding))
+		{
+			type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		}
+
+		bindings.push_back(VkDescriptorSetLayoutBinding{ .binding = static_cast<U32>(i),
+														 .descriptorType = type,
+														 .descriptorCount = 1,
+														 .stageFlags = VK_SHADER_STAGE_ALL,
+														 .pImmutableSamplers = nullptr });
+	}
+
+	const auto descriptorSetLayoutCreateInfo =
+		VkDescriptorSetLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+										 .pNext = nullptr,
+										 .flags = 0,
+										 .bindingCount = static_cast<U32>(bindings.size()),
+										 .pBindings = bindings.data() };
+
+	const auto result =
+		vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &bindGroupLayout.layout);
+	assert(result == VK_SUCCESS);
+	SetObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, (uint64_t)bindGroupLayout.layout, desc.debugName);
+	return bindGroupLayout;
+}
+
+void Framework::Graphics::VulkanContext::DestroyBindGroupLayout(const BindGroupLayout& layout) const
+{
+	vkDestroyDescriptorSetLayout(device, layout.layout, nullptr);
+}
+
+PipelineLayout VulkanContext::CreatePipelineLayout(const PipelineLayoutDesc&& desc) const
+{
+	auto pipelineLayout = PipelineLayout{};
+	auto setLayouts = std::vector<VkDescriptorSetLayout>{};
+	setLayouts.reserve(desc.bindGroupLayouts.size());
+	for (auto& bindGroupLayout : desc.bindGroupLayouts)
+	{
+		setLayouts.push_back(bindGroupLayout.layout);
+	}
+
+	const auto pipelineLayoutCreateInfo =
+		VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+									.pNext = nullptr,
+									.flags = 0,
+									.setLayoutCount = static_cast<uint32_t>(setLayouts.size()),
+									.pSetLayouts = setLayouts.data(),
+									.pushConstantRangeCount = static_cast<uint32_t>(desc.pushConstantRanges.size()),
+									.pPushConstantRanges = desc.pushConstantRanges.begin() };
+	const auto result = vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout.layout);
+	assert(result == VK_SUCCESS);
+
+	SetObjectDebugName(VK_OBJECT_TYPE_PIPELINE_LAYOUT, (uint64_t)pipelineLayout.layout, desc.debugName);
+	return pipelineLayout;
+}
+
+void VulkanContext::DestroyPipelineLayout(const PipelineLayout& layout) const
+{
+	vkDestroyPipelineLayout(device, layout.layout, nullptr);
 }
 
 GraphicsPipeline VulkanContext::CreateGraphicsPipeline(const GraphicsPipelineDesc&& desc) const
@@ -916,6 +1015,62 @@ void Framework::Graphics::VulkanContext::DestroyComputePipeline(const ComputePip
 	vkDestroyPipeline(device, pipeline.pipeline, nullptr);
 }
 
+#ifdef VULKAN_ENABLE_RAYTRACING
+RaytracingPipeline Framework::Graphics::VulkanContext::CreateRaytracingPipeline(
+	const RaytracingPipelineDesc&& desc) const
+{
+	RaytracingPipeline pipeline{};
+
+	const auto stages = std::array{ VkPipelineShaderStageCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .pNext = nullptr } };
+
+	const auto groups = std::array{ VkRayTracingShaderGroupCreateInfoKHR{
+		.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR, .pNext = nullptr } };
+
+	const auto libraryCreateInfo =
+		VkPipelineLibraryCreateInfoKHR{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR, .pNext = nullptr };
+
+	const auto libraryInterfaceCreateInfo = VkRayTracingPipelineInterfaceCreateInfoKHR{
+		.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_INTERFACE_CREATE_INFO_KHR, .pNext = nullptr
+	};
+
+	const auto dynamicState =
+		VkPipelineDynamicStateCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+										  .pNext = nullptr };
+
+	const auto createInfo =
+		VkRayTracingPipelineCreateInfoKHR{ .sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
+										   .pNext = nullptr,
+										   .flags = 0,
+										   .stageCount = static_cast<U32>(stages.size()),
+										   .pStages = stages.data(),
+										   .groupCount = static_cast<U32>(groups.size()),
+										   .pGroups = groups.data(),
+										   .maxPipelineRayRecursionDepth = desc.rayRecursionDepth,
+										   .pLibraryInfo = nullptr, //&libraryCreateInfo,
+										   .pLibraryInterface = nullptr, //&libraryInterfaceCreateInfo,
+										   .pDynamicState = &dynamicState,
+										   .layout = desc.pipelineLayout.layout,
+										   .basePipelineHandle = VK_NULL_HANDLE,
+										   .basePipelineIndex = 0 };
+
+	const auto result = vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &createInfo, nullptr,
+													   &pipeline.pipeline);
+	assert(result == VK_SUCCESS);
+	return pipeline;
+}
+
+ShaderBindingTable Framework::Graphics::VulkanContext::BuildShaderBindingTable(const ShaderBindingTableDesc&& desc,
+																			   const RaytracingPipeline& pipeline) const
+{
+	auto sbt = ShaderBindingTable{};
+
+
+	vkGetRayTracingShaderGroupHandlesKHR(device, pipeline.pipeline, 0, 1, 0, nullptr);
+
+	return sbt;
+}
+#endif
 void VulkanContext::RecreateSwapchain(const WindowViewport& windowViewport)
 {
 	ReleaseSwapchainResources();
@@ -971,7 +1126,8 @@ void VulkanContext::CreateSwapchain(const WindowViewport& windowViewport)
 
 		assert(formats.size() > 0);
 		// TODO: be sure the format is available on current device
-		const auto found = std::find_if(formats.begin(), formats.end(), [](const VkSurfaceFormat2KHR& format)
+		const auto found = std::find_if(formats.begin(), formats.end(),
+										[](const VkSurfaceFormat2KHR& format)
 										{ return format.surfaceFormat.format == VK_FORMAT_R8G8B8A8_UNORM; });
 		auto format = VkSurfaceFormat2KHR{};
 		if (found != formats.end())

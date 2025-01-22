@@ -4,6 +4,9 @@
 #include "RenderPasses.hpp"
 #include "Scene.hpp"
 #include "VulkanRHI.hpp"
+#include "UnifiedGeometryBuffer.hpp"
+#include "StreamingSystem.hpp"
+#include "AccelerationStructureBuilder.hpp"
 
 namespace Framework
 {
@@ -11,7 +14,7 @@ namespace Framework
 	{
 		struct BasicRenderPipeline
 		{
-			void Initialize(const VulkanContext& context, const WindowViewport& windowViewport);
+			void Initialize(VulkanContext& context, const WindowViewport& windowViewport, StreamingSystem& streamingSystem);
 			void Deinitialize(const VulkanContext& context);
 			void Execute(const VulkanContext& context, const WindowViewport& windowViewport, const Camera& camera,
 						 F32 deltaTime);
@@ -22,11 +25,15 @@ namespace Framework
 			}
 
 			Scene scene;
+			UnifiedGeometryBuffer unifiedGeometryBuffer;
 			FrameData frameData;
 
 			BasicGeometryPass basicGeometryPass;
 			ImGuiPass imGuiPass;
 			FullscreenQuadPass fullscreenQuadPass;
+
+			UnwrapGeometryForAccelerationStructurePass unwrapAccelerationStructurePass;
+			AccelerationStructureBuilder asBuilder{};
 
 			U32 frameIndex{ 0 };
 			F32 time{ 0 };

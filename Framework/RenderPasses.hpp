@@ -4,6 +4,7 @@
 #include "FrameData.hpp"
 #include "Scene.hpp"
 #include "VulkanRHI.hpp"
+#include "UnifiedGeometryBuffer.hpp"
 
 namespace Framework
 {
@@ -34,9 +35,9 @@ namespace Framework
 			GraphicsPipeline pipeline{};
 			PipelineLayout pipelineLayout{};
 
-			VkImageView depthView{VK_NULL_HANDLE};
-			VkImage depthImage{VK_NULL_HANDLE};
-			VmaAllocation depthImageAllocation{VK_NULL_HANDLE};
+			VkImageView depthView{ VK_NULL_HANDLE };
+			VkImage depthImage{ VK_NULL_HANDLE };
+			VmaAllocation depthImageAllocation{ VK_NULL_HANDLE };
 			Format depthFormat{ Format::d32f };
 
 			const VulkanContext* vulkanContext;
@@ -44,17 +45,18 @@ namespace Framework
 			std::vector<GraphicsPipeline> psoCache{};
 
 			void Execute(const VkCommandBuffer& cmd, VkImageView colorTarget, const Scene& scene,
-						 const FrameData::PerFrameResources& frame, const Camera& camera,
-						 const WindowViewport windowViewport, F32 deltaTime);
+						 const UnifiedGeometryBuffer& unifiedGeometryBuffer, const FrameData::PerFrameResources& frame,
+						 const Camera& camera, const WindowViewport windowViewport, F32 deltaTime);
 
 			void CreateViewDependentResources(const VulkanContext& context, const WindowViewport& windowViewport);
 			void ReleaseViewDependentResources(const VulkanContext& context);
 			void RecreateViewDependentResources(const VulkanContext& context, const WindowViewport& windowViewport);
 
 			void CompileOpaqueMaterial(const VulkanContext& context, const MaterialAsset& materialAsset);
-			GraphicsPipeline CompileOpaqueMaterialPsoOnly(const VulkanContext& context, const MaterialAsset& materialAsset);
+			GraphicsPipeline CompileOpaqueMaterialPsoOnly(const VulkanContext& context,
+														  const MaterialAsset& materialAsset);
 
-			void CreateResources(const VulkanContext& context, Scene& scene, FrameData& frameData,
+			void CreateResources(const VulkanContext& context, Scene& scene, UnifiedGeometryBuffer& unifiedGeometryBuffer, FrameData& frameData,
 								 const WindowViewport& windowViewport);
 			void ReleaseResources(const VulkanContext& context);
 		};

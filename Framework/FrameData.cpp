@@ -6,29 +6,8 @@ using namespace Framework::Graphics;
 
 void FrameData::CreateResources(const VulkanContext& context, int frameInFlights)
 {
-
-	{
-		const auto bindings =
-			std::array{ VkDescriptorSetLayoutBinding{ .binding = 0,
-													  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-													  .descriptorCount = 1,
-													  .stageFlags = VK_SHADER_STAGE_ALL,
-													  .pImmutableSamplers = nullptr } };
-
-		const auto descriptorSetLayoutCreateInfo =
-			VkDescriptorSetLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-											 .pNext = nullptr,
-											 .flags = 0, // VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-														 // //VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT,
-											 .bindingCount = bindings.size(),
-											 .pBindings = bindings.data() };
-
-		const auto result = vkCreateDescriptorSetLayout(context.device, &descriptorSetLayoutCreateInfo, nullptr,
-														&frameDescriptorSetLayout);
-		assert(result == VK_SUCCESS);
-		context.SetObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, (uint64_t)frameDescriptorSetLayout,
-								   "Uniform DS Layout");
-	}
+	frameBindGroupLayout = context.CreateBindGroupLayout(
+		BindGroupLayoutDesc{ .bindings = { UniformBufferBinding{} }, .debugName = "Uniform DS Layout" });
 
 	perFrameResources.resize(frameInFlights);
 	for (auto i = 0; i < perFrameResources.size(); i++)
@@ -54,7 +33,7 @@ void FrameData::CreateResources(const VulkanContext& context, int frameInFlights
 											 .pNext = nullptr,
 											 .descriptorPool = perFrameResources[i].frameDescriptorPool,
 											 .descriptorSetCount = 1,
-											 .pSetLayouts = &frameDescriptorSetLayout };
+											 .pSetLayouts = &frameBindGroupLayout.layout };
 			const auto result = vkAllocateDescriptorSets(context.device, &allocationInfo,
 														 &perFrameResources[i].jointsMatricesDescriptorSet);
 			assert(result == VK_SUCCESS);
@@ -78,7 +57,7 @@ void FrameData::ReleaseResources(const VulkanContext& context)
 		vkDestroyDescriptorPool(context.device, perFrameResources[i].frameDescriptorPool, nullptr);
 	}
 
-	vkDestroyDescriptorSetLayout(context.device, frameDescriptorSetLayout, nullptr);
+	context.DestroyBindGroupLayout(frameBindGroupLayout);
 }
 
 void FrameData::UploadJointMatrices(const std::vector<Math::Matrix4x4>& jointMatrices)

@@ -28,7 +28,7 @@ namespace Framework
 			};
 
 			std::vector<PerFrameResources> perFrameResources;
-			VkDescriptorSetLayout frameDescriptorSetLayout;
+			BindGroupLayout frameBindGroupLayout;
 		};
 	} // namespace Graphics
 

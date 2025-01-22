@@ -1,7 +1,9 @@
 #pragma once
 #include <array>
 #include <filesystem>
+#include <initializer_list>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "Core.hpp"
@@ -13,6 +15,8 @@
 #include "VmaUtils.hpp"
 
 #include <tracy/TracyVulkan.hpp>
+
+#define VULKAN_ENABLE_RAYTRACING 1
 
 namespace Framework
 {
@@ -80,6 +84,12 @@ namespace Framework
 			return VK_FORMAT_UNDEFINED;
 		}
 
+
+		struct PipelineLayout
+		{
+			VkPipelineLayout layout;
+		};
+
 		struct GraphicsPipeline
 		{
 			VkPipeline pipeline;
@@ -90,10 +100,58 @@ namespace Framework
 			VkPipeline pipeline;
 		};
 
-		struct PipelineLayout
+		struct BindGroupLayout
 		{
-			VkPipelineLayout layout;
+			VkDescriptorSetLayout layout;
 		};
+
+		struct BindingBase
+		{
+			// TODO: stage flags
+		};
+		struct StorageBufferBinding : BindingBase
+		{
+		};
+		struct UniformBufferBinding : BindingBase
+		{
+		};
+		using Binding = std::variant<StorageBufferBinding, UniformBufferBinding>;
+
+		struct BindGroupLayoutDesc
+		{
+			std::initializer_list<Binding> bindings;
+			const char* debugName = "";
+		};
+
+		struct PipelineLayoutDesc
+		{
+			std::initializer_list<BindGroupLayout> bindGroupLayouts;
+			std::initializer_list<VkPushConstantRange> pushConstantRanges;
+			const char* debugName = "";
+		};
+
+
+#ifdef VULKAN_ENABLE_RAYTRACING
+		struct RaytracingPipeline
+		{
+			VkPipeline pipeline;
+		};
+
+		struct RaytracingPipelineDesc
+		{
+			U32 rayRecursionDepth{ 1 };
+			PipelineLayout pipelineLayout{};
+			const char* debugName = "";
+		};
+
+		struct ShaderBindingTable
+		{
+		};
+
+		struct ShaderBindingTableDesc
+		{
+		};
+#endif
 
 		enum class FaceCullingMode
 		{
@@ -143,6 +201,7 @@ namespace Framework
 			const char* debugName = "";
 		};
 
+
 		struct DeviceLimits
 		{
 			U32 maxUniformBufferRange{};
@@ -176,6 +235,9 @@ namespace Framework
 			uint32_t frameResourceCount{};
 			std::vector<PerFrameResource> perFrameResources{};
 
+#ifdef VULKAN_ENABLE_RAYTRACING
+			VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingPipelineProperties{};
+#endif
 
 			template <U32 segments>
 			struct DynamicUniformAllocator
@@ -230,7 +292,7 @@ namespace Framework
 
 					return alignedPtr;
 				}
-				void NextFrame() const 
+				void NextFrame() const
 				{
 					frameIndex++;
 					auto& segment = ringSegments[frameIndex % segments];
@@ -257,28 +319,43 @@ namespace Framework
 			void BeginDebugLabelName(VkCommandBuffer cmd, const char* name, DebugColor color) const;
 			void EndDebugLabelName(VkCommandBuffer cmd) const;
 
-			GraphicsBuffer CreateBuffer(const BufferDesc&& desc) const;
+			[[nodiscard]] GraphicsBuffer CreateBuffer(const BufferDesc&& desc) const;
 			void DestroyBuffer(const GraphicsBuffer& buffer) const;
 
-			VkShaderModule ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path,
-												std::string_view entryPoint) const;
-			VkShaderModule ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader,
-												std::string_view name, std::string_view entryPoint) const;
+			[[nodiscard]] VkShaderModule ShaderModuleFromFile(Utils::ShaderStage stage,
+															  const std::filesystem::path& path,
+															  std::string_view entryPoint) const;
+			[[nodiscard]] VkShaderModule ShaderModuleFromText(Utils::ShaderStage stage, std::string_view shader,
+															  std::string_view name, std::string_view entryPoint) const;
 
-			Utils::ShaderByteCode SpirvFromFile(Utils::ShaderStage stage, const std::filesystem::path& path,
-												std::string_view entryPoint) const;
-			Utils::ShaderByteCode SpirvFromText(Utils::ShaderStage stage, std::string_view shader,
-												std::string_view name, std::string_view entryPoint) const;
+			[[nodiscard]] Utils::ShaderByteCode SpirvFromFile(Utils::ShaderStage stage,
+															  const std::filesystem::path& path,
+															  std::string_view entryPoint) const;
+			[[nodiscard]] Utils::ShaderByteCode SpirvFromText(Utils::ShaderStage stage, std::string_view shader,
+															  std::string_view name, std::string_view entryPoint) const;
 
-			std::string LoadShaderFileAsText(const std::filesystem::path& path) const;
+			[[nodiscard]] std::string LoadShaderFileAsText(const std::filesystem::path& path) const;
 
+			[[nodiscard]] BindGroupLayout CreateBindGroupLayout(const BindGroupLayoutDesc&& desc) const;
+			void DestroyBindGroupLayout(const BindGroupLayout& layout) const;
 
-			GraphicsPipeline CreateGraphicsPipeline(const GraphicsPipelineDesc&& desc) const;
+			[[nodiscard]] PipelineLayout CreatePipelineLayout(const PipelineLayoutDesc&& desc) const;
+			void DestroyPipelineLayout(const PipelineLayout& layout) const;
+
+			[[nodiscard]] GraphicsPipeline CreateGraphicsPipeline(const GraphicsPipelineDesc&& desc) const;
 			void DestroyGraphicsPipeline(const GraphicsPipeline& pipeline) const;
 
-			ComputePipeline CreateComputePipeline(const ComputePipelineDesc&& desc) const;
+			[[nodiscard]] ComputePipeline CreateComputePipeline(const ComputePipelineDesc&& desc) const;
 			void DestroyComputePipeline(const ComputePipeline& pipeline) const;
 
+#ifdef VULKAN_ENABLE_RAYTRACING
+
+			[[nodiscard]] RaytracingPipeline CreateRaytracingPipeline(const RaytracingPipelineDesc&& desc) const;
+			void DestroyRaytracingPipeline(const RaytracingPipeline& pipeline) const;
+
+			[[nodiscard]] ShaderBindingTable BuildShaderBindingTable(const ShaderBindingTableDesc&& desc,
+																	 const RaytracingPipeline& pipeline) const;
+#endif
 			void RecreateSwapchain(const WindowViewport& windowViewport);
 			void ReleaseSwapchainResources();
 			void CreateSwapchain(const WindowViewport& windowViewport);

@@ -1,6 +1,9 @@
 #include "BasicRenderPipeline.hpp"
-#include "Profiler.hpp"
 #include <ImGuiUtils.hpp>
+#include "Profiler.hpp"
+
+using namespace Framework;
+using namespace Framework::Graphics;
 
 namespace
 {
@@ -10,15 +13,16 @@ namespace
 		"void surface(in Geometry geometry, out vec4 color){ color = vec4(0.0f,1.0f,0.0f,1.0f);}";
 } // namespace
 
-void Framework::Graphics::BasicRenderPipeline::Initialize(const VulkanContext& context,
-														  const WindowViewport& windowViewport)
+void BasicRenderPipeline::Initialize(VulkanContext& context, const WindowViewport& windowViewport,
+									 StreamingSystem& streamingSystem)
 {
 
 	frameData.CreateResources(context, context.frameResourceCount);
 
 	scene.CreateResources(context);
+	unifiedGeometryBuffer.CreateResources(context, scene, streamingSystem);
 
-	basicGeometryPass.CreateResources(context, scene, frameData, windowViewport);
+	basicGeometryPass.CreateResources(context, scene, unifiedGeometryBuffer, frameData, windowViewport);
 
 	MaterialAsset material01 = MaterialAsset{ sample_surface_01 };
 	MaterialAsset material02 = MaterialAsset{ sample_surface_02 };
@@ -29,20 +33,25 @@ void Framework::Graphics::BasicRenderPipeline::Initialize(const VulkanContext& c
 	fullscreenQuadPass.CreateResources(context);
 
 	imGuiPass.CreateResources(context);
+
+	unwrapAccelerationStructurePass.CreateResources(context, scene);
+	asBuilder.CreateResources(context, unwrapAccelerationStructurePass);
 }
 
-void Framework::Graphics::BasicRenderPipeline::Deinitialize(const VulkanContext& context)
+void BasicRenderPipeline::Deinitialize(const VulkanContext& context)
 {
+	asBuilder.ReleaseResources(context);
 	frameData.ReleaseResources(context);
+	unifiedGeometryBuffer.ReleaseResources(context);
 	scene.ReleaseResources(context);
 	imGuiPass.ReleaseResources(context);
 	basicGeometryPass.ReleaseResources(context);
 	fullscreenQuadPass.ReleaseResources(context);
+	unwrapAccelerationStructurePass.ReleaseResources(context);
 }
 
-void Framework::Graphics::BasicRenderPipeline::Execute(const VulkanContext& context,
-													   const WindowViewport& windowViewport, const Camera& camera,
-													   F32 deltaTime)
+void BasicRenderPipeline::Execute(const VulkanContext& context, const WindowViewport& windowViewport,
+								  const Camera& camera, F32 deltaTime)
 {
 	ZoneScoped;
 	const auto perFrameResourceIndex = frameIndex % context.frameResourceCount;
@@ -100,6 +109,16 @@ void Framework::Graphics::BasicRenderPipeline::Execute(const VulkanContext& cont
 		}
 #pragma endregion
 
+		if (ImGui::Button("build blas"))
+		{
+			for (auto i = 0; i < scene.meshes.size(); i++)
+			{
+				asBuilder.AddMeshAsNewBottomLevelAccelerationStructure(scene.meshes[i], scene.modelMatrices[i]);
+			}
+			asBuilder.BuildBottomLevelAccelerationStructures(cmd);
+			asBuilder.BuildTopLevelAccelerationStructure(cmd);
+		}
+
 #pragma region Resource transition [presentable image -> color attachment]
 		{
 			const auto imageBarrier =
@@ -136,7 +155,7 @@ void Framework::Graphics::BasicRenderPipeline::Execute(const VulkanContext& cont
 
 
 		context.BeginDebugLabelName(cmd, "Update Unified Geometry Buffer Lookup", DebugColorPalette::Blue);
-		scene.UpdateUnifiedGeometryBufferLookup(cmd);
+		unifiedGeometryBuffer.UpdateUnifiedGeometryBufferLookupTable(cmd, scene);
 		context.EndDebugLabelName(cmd);
 
 
@@ -145,7 +164,8 @@ void Framework::Graphics::BasicRenderPipeline::Execute(const VulkanContext& cont
 		const auto descriptorBufferInfo = VkDescriptorBufferInfo{
 			.buffer = frameData.uniformBuffer.buffer,
 			.offset = frameData.jointMatricesOffset,
-			.range = context.limits.maxUniformBufferRange//frameData.jointMatricesSize, //TODO: setting the joint values should be not happen here
+			.range = context.limits.maxUniformBufferRange // frameData.jointMatricesSize, //TODO: setting the joint
+														  // values should be not happen here
 		};
 
 		const auto dsWrite =
@@ -163,7 +183,7 @@ void Framework::Graphics::BasicRenderPipeline::Execute(const VulkanContext& cont
 
 		vkUpdateDescriptorSets(context.device, 1, &dsWrite, 0, nullptr);
 
-		basicGeometryPass.Execute(cmd, context.swapchainImageViews[imageIndex], scene,
+		basicGeometryPass.Execute(cmd, context.swapchainImageViews[imageIndex], scene, unifiedGeometryBuffer,
 								  frameData.perFrameResources[perFrameResourceIndex], camera, windowViewport,
 								  deltaTime);
 		context.EndDebugLabelName(cmd);
