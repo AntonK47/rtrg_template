@@ -19,6 +19,7 @@ namespace Framework
 
 		enum class ShaderStage
 		{
+			Compute,
 			Vertex,
 			Fragment,
 			Geometry,

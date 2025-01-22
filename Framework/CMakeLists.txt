@@ -9,6 +9,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(stduuid CONFIG REQUIRED)
 find_package(unofficial-imgui-node-editor CONFIG REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
+find_package(MPMCQueue CONFIG REQUIRED)
 
 set(FRAMEWORK_NAME TemplateFramework)
 
@@ -75,6 +76,7 @@ PRIVATE
 	stduuid
 	unofficial::imgui-node-editor::imgui-node-editor
 	Tracy::TracyClient
+	MPMCQueue::MPMCQueue
 )
 
 target_compile_definitions(${FRAMEWORK_NAME} PUBLIC UUID_SYSTEM_GENERATOR)

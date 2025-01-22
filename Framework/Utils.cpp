@@ -16,6 +16,8 @@ namespace
 	{
 		switch (stage)
 		{
+		case Utils::ShaderStage::Compute:
+			return EShLangCompute;
 		case Utils::ShaderStage::Vertex:
 			return EShLangVertex;
 		case Utils::ShaderStage::Fragment:
