@@ -11,17 +11,22 @@
     "mpmcqueue",
     {
       "name": "stduuid",
-      "features": [ "system-gen" ]
+      "features": [
+        "system-gen"
+      ]
     },
-    "imgui-node-editor",
     {
       "name": "sdl3",
-      "features": [ "vulkan" ]
+      "features": [
+        "vulkan"
+      ]
     },
     {
       "name": "tracy",
-      "features": [ "gui-tools" ]
+      "features": [
+        "gui-tools"
+      ]
     }
   ],
-  "builtin-baseline": "20a72ce99b12dd0ebfea5d39f32681bd68b19d03"
+  "builtin-baseline": "117512d870c0f260f4914b6b4bb006b9054b06eb"
 }

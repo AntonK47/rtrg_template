@@ -7,7 +7,6 @@ find_package(glm CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(stduuid CONFIG REQUIRED)
-find_package(unofficial-imgui-node-editor CONFIG REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
 find_package(MPMCQueue CONFIG REQUIRED)
 
@@ -84,7 +83,7 @@ PRIVATE
 	glm::glm-header-only
 	nlohmann_json::nlohmann_json
 	stduuid
-	unofficial::imgui-node-editor::imgui-node-editor
+	imgui-node-editor::imgui-node-editor
 	MPMCQueue::MPMCQueue
 )
 

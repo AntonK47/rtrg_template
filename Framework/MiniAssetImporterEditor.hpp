@@ -8,21 +8,32 @@
 #include <filesystem>
 #include <vector>
 
-#include <imgui-node-editor/imgui_node_editor.h>
+#include <imgui_node_editor.h>
 
 namespace Framework
 {
 	namespace Editor
 	{
+		enum class ParamType
+		{
+			f32,
+			u32
+		};
+
+		struct ParamDesc
+		{
+			ParamType type;
+			const char* name;
+		};
 
 		struct AssetImporterEditor
 		{
-			ax::NodeEditor::EditorContext* editorContext;
+			ax::NodeEditor::EditorContext* editorContext{nullptr};
 
 			AssetImporterEditor()
 			{
 				ax::NodeEditor::Config config;
-				config.SettingsFile = "Simple.json";
+				//config.SettingsFile = "Simple.json";
 				editorContext = ax::NodeEditor::CreateEditor(&config);
 			}
 
@@ -48,7 +59,7 @@ namespace Framework
 
 			void Draw()
 			{
-				static auto selectedAssetFile = -1;
+				/*static auto selectedAssetFile = -1;
 				static auto foundAssetFiles = std::vector<std::filesystem::path>{};
 				static auto importInfo = SceneInformation{};
 				ImGui::Begin("Asset Import");
@@ -120,30 +131,55 @@ namespace Framework
 						ImGui::EndListBox();
 					}
 				}
-				ImGui::End();
+				ImGui::End();*/
+
+
+				static auto params = std::vector<ParamDesc>{};
 
 				ImGui::Begin("Node Test");
-				ImGui::Separator();
+
+				/*if (ImGui::BeginChild("Parameters", { 200, 100 }, ImGuiChildFlags_None))
+				{
+					if (ImGui::BeginListBox("##List01"))
+					{
+						for (int i = 0; i < params.size(); i++)
+						{
+
+							ImGui::Selectable(params[i].name, false);
+						}
+						ImGui::EndListBox();
+					}
+
+					if (ImGui::Button("Add Parameter"))
+					{
+						params.push_back({ ParamType::f32, "unknown" });
+					}
+
+					ImGui::EndChild();
+				}*/
+				// ImGui::Separator();
 				ax::NodeEditor::SetCurrentEditor(editorContext);
+
 				ax::NodeEditor::Begin("editor");
-				int uniqueId = 1;
-				// Start drawing nodes.
-				ax::NodeEditor::BeginNode(uniqueId++);
-				ImGui::Text("Node A");
-				ax::NodeEditor::BeginPin(uniqueId++, ax::NodeEditor::PinKind::Input);
-				ImGui::Text("-> In");
-				ax::NodeEditor::EndPin();
-				ImGui::SameLine();
-				ax::NodeEditor::BeginPin(uniqueId++, ax::NodeEditor::PinKind::Output);
-				ImGui::Text("Out ->");
-				ax::NodeEditor::EndPin();
-				ax::NodeEditor::EndNode();
+				//int uniqueId = 1;
+				//// Start drawing nodes.
+				//ax::NodeEditor::BeginNode(uniqueId++);
+				//ImGui::Text("Node A");
+				//ax::NodeEditor::BeginPin(uniqueId++, ax::NodeEditor::PinKind::Input);
+				//ImGui::Text("-> In");
+				//ax::NodeEditor::EndPin();
+				//ImGui::SameLine();
+				//ax::NodeEditor::BeginPin(uniqueId++, ax::NodeEditor::PinKind::Output);
+				//ImGui::Text("Out ->");
+				//ax::NodeEditor::EndPin();
+				//ax::NodeEditor::EndNode();
+
 				ax::NodeEditor::End();
-				ax::NodeEditor::SetCurrentEditor(nullptr);
+				// ax::NodeEditor::SetCurrentEditor(nullptr);
 
 				ImGui::End();
 			}
-			
+
 			/*struct Material
 			{
 				int materialIndex;
@@ -188,7 +224,7 @@ namespace Framework
 
 			struct ExampleNode
 			{
-				
+
 			};
 			struct ComponentNode
 			{

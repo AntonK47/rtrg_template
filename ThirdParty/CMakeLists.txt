@@ -54,3 +54,33 @@ PUBLIC
 )
 
 set_target_properties(imgui PROPERTIES FOLDER "thirdParty/imgui")
+
+
+FetchContent_Declare(imgui-node-editor
+    GIT_REPOSITORY https://github.com/thedmd/imgui-node-editor.git
+    GIT_TAG develop
+)
+
+FetchContent_MakeAvailable(imgui-node-editor)
+add_library(imgui-node-editor)
+add_library(imgui-node-editor::imgui-node-editor ALIAS imgui-node-editor)
+target_sources(imgui-node-editor 
+PRIVATE
+    ${imgui-node-editor_SOURCE_DIR}/crude_json.cpp
+    ${imgui-node-editor_SOURCE_DIR}/imgui_canvas.cpp
+    ${imgui-node-editor_SOURCE_DIR}/imgui_node_editor.cpp
+    ${imgui-node-editor_SOURCE_DIR}/imgui_node_editor_api.cpp
+)
+        
+target_link_libraries(
+    imgui-node-editor
+PRIVATE
+    imgui
+)
+target_include_directories(imgui
+PUBLIC
+    ${imgui-node-editor_SOURCE_DIR}
+)
+
+
+set_target_properties(imgui-node-editor PROPERTIES FOLDER "thirdParty/imgui-node-editor")
