@@ -92,6 +92,11 @@ namespace
 			}
 		}
 	}
+
+	void GenerateExampleTestSceneData()
+	{
+		
+	}
 } // namespace
 void Framework::Application::Run()
 {
@@ -124,16 +129,19 @@ void Framework::Application::Run()
 	windowViewport.UpdateSize(window);
 	windowViewport.shouldRecreateWindowSizeDependedResources = false;
 
+
+	StreamingSystem streamingSystem{};
+	streamingSystem.Initialize();
+
 	auto vulkanContext = VulkanContext{};
 	vulkanContext.Initialize(applicationName, window, windowViewport);
 
 	auto basicRenderPipeline = BasicRenderPipeline{};
-	basicRenderPipeline.Initialize(vulkanContext, windowViewport);
+	basicRenderPipeline.Initialize(vulkanContext, windowViewport, streamingSystem);
 
 	auto guiSystem = GuiSystem{};
 	guiSystem.Initialize(vulkanContext, window, basicRenderPipeline.imGuiPass);
 #pragma endregion
-
 #pragma region Setup Camera
 	auto camera = Camera{ .position = glm::vec3{ 0.0f, 0.0f, 0.0f },
 						  .forward = glm::vec3{ 0.0f, 0.0f, 1.0f },
@@ -209,12 +217,53 @@ void Framework::Application::Run()
 
 			static bool show_demo_window = true;
 			ImGui::ShowDemoWindow(&show_demo_window);
+			const auto aspectRatio =
+				static_cast<float>(windowViewport.width) / static_cast<float>(windowViewport.height);
+			const auto projection = glm::perspective(glm::radians(60.0f), aspectRatio, 0.001f, 100.0f);
+			const auto view = glm::lookAt(camera.position, camera.position + camera.forward, camera.up);
+
+			const auto [o, o1] = GetScreenSpacePosition(glm::vec2{ windowViewport.width, windowViewport.height }, view,
+														projection, Math::Vector3{ 0.0f, 0.0f, 0.0f });
+
+			const auto [x, x1] = GetScreenSpacePosition(glm::vec2{ windowViewport.width, windowViewport.height }, view,
+														projection, Math::Vector3{ 1.0f, 0.0f, 0.0f });
+
+			const auto [y, y1] = GetScreenSpacePosition(glm::vec2{ windowViewport.width, windowViewport.height }, view,
+														projection, Math::Vector3{ 0.0f, 1.0f, 0.0f });
+
+
+			const auto [z, z1] = GetScreenSpacePosition(glm::vec2{ windowViewport.width, windowViewport.height }, view,
+														projection, Math::Vector3{ 0.0f, 0.0f, 1.0f });
+
+
+			auto& drawList = *ImGui::GetBackgroundDrawList();
+			
+			if (x1)
+			{
+
+				drawList.AddLine(o, x, IM_COL32(255, 0, 0, 255));
+				drawList.AddText(x, IM_COL32(255, 255, 255, 255), "X axis");
+			}
+
+			if (y1)
+			{
+
+				drawList.AddLine(o, y, IM_COL32(0, 255, 0, 255));
+				drawList.AddText(y, IM_COL32(255, 255, 255, 255), "Y axis");
+			}
+			if (z1)
+			{
+
+				drawList.AddLine(o, z, IM_COL32(0, 0, 255, 255));
+				drawList.AddText(z, IM_COL32(255, 255, 255, 255), "Z axis");
+			}
 
 			assetImporterEditor.Draw();
 
-			if(ImGui::Button("load mesh"))
+			if (ImGui::Button("load mesh"))
 			{
-				basicRenderPipeline.GetScene().Upload("Assets/Meshes/after_the_rain..._-_vr__sound/scene.gltf", vulkanContext);
+				basicRenderPipeline.GetScene().Upload("Assets/Meshes/after_the_rain..._-_vr__sound/scene.gltf",
+													  vulkanContext);
 			}
 
 			if (ImGui::Button("add task"))
@@ -259,8 +308,8 @@ void Framework::Application::Run()
 												   (std::rand() % 255) / 255.0f, (std::rand() % 255) / 255.0f);
 
 					MaterialAsset myNewMaterial{ generatedCode };
-					const auto pso = basicRenderPipeline.basicGeometryPass.CompileOpaqueMaterialPsoOnly(vulkanContext,
-																										myNewMaterial);
+					const auto pso =
+			basicRenderPipeline.basicGeometryPass.CompileOpaqueMaterialPsoOnly(vulkanContext, myNewMaterial);
 
 					vulkanContext.WaitIdle();
 					vulkanContext.DestroyGraphicsPipeline(basicRenderPipeline.basicGeometryPass.psoCache[i]);
@@ -316,7 +365,8 @@ void Framework::Application::Run()
 
 			if (enableDebugDraw)
 			{
-				auto model = glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+				auto model = glm::rotate(glm::identity<glm::mat4>(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f,
+			0.0f));
 
 				const auto aspectRatio =
 					static_cast<float>(windowViewport.width) / static_cast<float>(windowViewport.height);
@@ -346,7 +396,8 @@ void Framework::Application::Run()
 
 						const auto [p1screen, p1IsVisible] =
 							GetScreenSpacePosition(glm::vec2{ windowViewport.width, windowViewport.height },
-												   view * model * jointMatrices[joint.parentIndex], projection, origin);
+												   view * model * jointMatrices[joint.parentIndex], projection,
+			origin);
 
 						if (p0IsVisible and p1IsVisible)
 						{
@@ -365,6 +416,26 @@ void Framework::Application::Run()
 		}
 #pragma region Render State
 		basicRenderPipeline.Execute(vulkanContext, windowViewport, camera, ImGui::GetIO().DeltaTime);
+
+		struct VirtualLookupTableUpdate
+		{
+			U32 entryIndex;
+			U32 physicalByteOffset;
+		};
+
+		auto a = (VirtualLookupTableUpdate*)vulkanContext.dynamicUniformAllocator.Allocate(
+			sizeof(VirtualLookupTableUpdate) * 2);
+		a->entryIndex = 1;
+		a->physicalByteOffset = 777;
+
+		a += 1;
+		a->entryIndex = 4;
+		a->physicalByteOffset = 999;
+
+		/*auto b = (U32*)vulkanContext.dynamicUniformAllocator.Allocate(sizeof(U32));
+		 *b = 1111111;*/
+
+
 #pragma endregion
 		FrameMark;
 	}
@@ -386,4 +457,6 @@ void Framework::Application::Run()
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 #endif // RTRG_ENABLE_PROFILER
+	//TODO: it's a hack, otherwise tracy blocks exiting after returning from this call
+	std::quick_exit(0);
 }
