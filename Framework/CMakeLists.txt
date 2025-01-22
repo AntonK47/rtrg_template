@@ -55,6 +55,7 @@ PRIVATE
 	Memory.cpp
 	Profiler.hpp
 	)
+	Pool.hpp
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)
 
