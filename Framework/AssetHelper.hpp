@@ -28,10 +28,11 @@ namespace Framework
 {
 	enum class AssetType : U8
 	{
-		subMesh
+		subMesh,
+		modelInstance
 	};
 
-	NLOHMANN_JSON_SERIALIZE_ENUM(AssetType, { { AssetType::subMesh, "subMesh" } });
+	NLOHMANN_JSON_SERIALIZE_ENUM(AssetType, { { AssetType::subMesh, "subMesh"}, {AssetType::modelInstance, "modelInstance" } });
 
 	struct AssetNode
 	{
@@ -43,6 +44,12 @@ namespace Framework
 
 	public:
 		NLOHMANN_DEFINE_TYPE_INTRUSIVE(AssetNode, uuid, name, type, version, assetNodeData);
+	};
+
+	struct ObjectReference
+	{
+		std::string name;
+		std::string assetFile;
 	};
 
 	struct AssetFile
@@ -58,10 +65,11 @@ namespace Framework
 
 	enum class MeshType : U8
 	{
-		skinned
+		skinned,
+		staticMesh
 	};
 
-	NLOHMANN_JSON_SERIALIZE_ENUM(MeshType, { { MeshType::skinned, "skinned" } });
+	NLOHMANN_JSON_SERIALIZE_ENUM(MeshType, { { MeshType::skinned, "skinned"}, {MeshType::staticMesh, "staticMesh" } });
 
 	struct BinarySourceFile
 	{
@@ -118,5 +126,18 @@ namespace Framework
 		{
 		}
 	};
+
+	struct AssetDatabase
+	{
+		std::unordered_map<std::string_view, std::string_view> assetObjectToFileLink;
+		
+		std::vector<Asset> assets;
+		std::vector<MeshAsset> meshAssets;
+	};
+
+	inline void LoadAssetObject(const std::string_view assetObject, AssetDatabase& assetDatabase)
+	{
+		
+	}
 
 } // namespace Framework
