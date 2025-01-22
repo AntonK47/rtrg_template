@@ -8,9 +8,6 @@
 
 #ifndef RTRG_ENABLE_PROFILER
 #define RTRG_PROFILER_CALLSTACK_DEPTH 0
-#ifdef TRACY_ENABLE
-#undef TRACY_ENABLE
-#endif
 #endif
 
 #include <tracy/Tracy.hpp>

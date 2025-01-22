@@ -107,7 +107,7 @@ void AccelerationStructureBuilder::BuildBottomLevelAccelerationStructures(const 
 														 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
 															 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 															 VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
-														 MemoryUsage::gpu, "Tlas Buffer" });
+														 MemoryUsage::gpu, "Blas Buffer" });
 
 	auto tlasBufferOffset = U32{ 0 };
 

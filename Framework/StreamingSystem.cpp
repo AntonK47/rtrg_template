@@ -20,7 +20,9 @@ void Framework::StreamingSystem::Request(StreamingTask&& task)
 
 void Framework::StreamingSystem::StreamingWorker(void* self)
 {
+#ifdef TRACY_ENABLE
 	tracy::SetThreadName("Streaming Worker");
+#endif
 	auto& streamingSystem = *reinterpret_cast<StreamingSystem*>(self);
 
 	while (true)
@@ -30,8 +32,8 @@ void Framework::StreamingSystem::StreamingWorker(void* self)
 
 		StreamingTask task;
 		const auto hasTaskAcquired = streamingSystem.streamingTasks.try_pop(task);
-		
-		if(hasTaskAcquired)
+
+		if (hasTaskAcquired)
 		{
 			ZoneScopedN("Streaming Task");
 			task.task();

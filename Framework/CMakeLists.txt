@@ -85,7 +85,6 @@ PRIVATE
 	nlohmann_json::nlohmann_json
 	stduuid
 	unofficial::imgui-node-editor::imgui-node-editor
-	Tracy::TracyClient
 	MPMCQueue::MPMCQueue
 )
 
@@ -93,7 +92,12 @@ target_compile_definitions(${FRAMEWORK_NAME} PUBLIC UUID_SYSTEM_GENERATOR)
 
 
 if(${RTRG_ENABLE_PROFILER})
-	target_compile_definitions(${FRAMEWORK_NAME} PUBLIC RTRG_ENABLE_PROFILER RTRG_PROFILER_CALLSTACK_DEPTH=30 TRACY_IMPORTS)
+	target_compile_definitions(${FRAMEWORK_NAME} PUBLIC RTRG_ENABLE_PROFILER TRACY_ENABLE RTRG_PROFILER_CALLSTACK_DEPTH=30 TRACY_IMPORTS)
+	target_link_libraries(
+		${FRAMEWORK_NAME}
+	PRIVATE	
+		Tracy::TracyClient
+	)
 endif()
 
 
