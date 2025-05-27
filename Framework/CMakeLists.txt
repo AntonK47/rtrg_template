@@ -9,6 +9,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(stduuid CONFIG REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
 find_package(MPMCQueue CONFIG REQUIRED)
+find_package(Stb REQUIRED)
 
 set(FRAMEWORK_NAME TemplateFramework)
 
@@ -65,9 +66,16 @@ PRIVATE
 	AccelerationStructureBuilder.cpp
 	UnwrapGeometryForAccelerationStructurePass.hpp
 	UnwrapGeometryForAccelerationStructurePass.cpp
+	MaterialGraphEditor.hpp
+	MaterialGraphEditor.cpp
+	LightmapAtlasBuilder.hpp
+	LightmapAtlasBuilder.cpp
+	StreamableTexture.hpp
+	StreamableTexture.cpp
  )
 
 target_include_directories(${FRAMEWORK_NAME} PUBLIC /)
+target_include_directories(${FRAMEWORK_NAME} PRIVATE ${Stb_INCLUDE_DIR})
 
 target_link_libraries(
 	${FRAMEWORK_NAME}
@@ -85,6 +93,7 @@ PRIVATE
 	stduuid
 	imgui-node-editor::imgui-node-editor
 	MPMCQueue::MPMCQueue
+	xatlas::xatlas
 )
 
 target_compile_definitions(${FRAMEWORK_NAME} PUBLIC UUID_SYSTEM_GENERATOR)

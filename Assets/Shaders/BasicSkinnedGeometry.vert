@@ -37,6 +37,24 @@ layout(set=0, binding = 1) readonly buffer registeredSubMeshes
 	SubMesh subMeshes[1024];
 };
 
+//layout(set=0, binding = 1) readonly buffer perViewDataBlock
+//{
+//	mat4 viewProjection;
+//	mat4 view;
+//	vec3 viewPositionWS;
+//} perViewData;
+//
+//struct ObjectData
+//{
+//	mat4 transfotm;
+//	uint subMeshIndex;
+//};
+//
+//layout(set=0, binding = 1) readonly buffer perObject
+//{
+//	ObjectData objects[];
+//};
+//
 layout(push_constant) uniform constantsBlock 
 {
 	layout(offset = 32)

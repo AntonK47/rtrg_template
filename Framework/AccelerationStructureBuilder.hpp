@@ -12,7 +12,7 @@ namespace Framework
 {
 	namespace Graphics
 	{
-		struct TriangleBottomLevelAccelerationStrcutureBuildInfo
+		struct TriangleBottomLevelAccelerationStructureBuildInfo
 		{
 			VkAccelerationStructureBuildSizesInfoKHR sizeInfo;
 			const IndexedStaticMesh* mesh;
@@ -42,7 +42,7 @@ namespace Framework
 
 			std::vector<TriangleBottomLevelAccelerationStructure> accelerationStructures{};
 			std::vector<Math::Matrix4x4> transforms{};
-			std::vector<TriangleBottomLevelAccelerationStrcutureBuildInfo> asBuildInfos{};
+			std::vector<TriangleBottomLevelAccelerationStructureBuildInfo> asBuildInfos{};
 			TopLevelAccelerationStructure topLevelAs{};
 			GraphicsBuffer bottomLevelAsBuffer{};
 

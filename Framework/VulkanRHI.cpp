@@ -1,6 +1,7 @@
 #include "VulkanRHI.hpp"
 #include <fstream>
 #include "Core.hpp"
+#include "Math.hpp"
 #include "SDL3Utils.hpp"
 
 #ifdef WIN32
@@ -263,16 +264,16 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 
 #pragma region Device creation
 	{
-		const auto enabledDeviceExtensions = std::array{
-			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		const auto enabledDeviceExtensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 #ifdef RTRG_ENABLE_PROFILER
-			VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
-			VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
+														 VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
+														 VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
 #endif
 #ifdef VULKAN_ENABLE_RAYTRACING
-			VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-			VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-			VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+														 VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+														 VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+														 VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+														 VK_KHR_RAY_QUERY_EXTENSION_NAME
 #endif
 		};
 
@@ -291,11 +292,15 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 												 .queueCount = 1,
 												 .pQueuePriorities = &queuePriority } };
 
+		auto rayQueryFeatures = VkPhysicalDeviceRayQueryFeaturesKHR{
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, .pNext = nullptr, .rayQuery = VK_TRUE
+		};
+
 		auto accelerationStructureFeatures = VkPhysicalDeviceAccelerationStructureFeaturesKHR{};
 		accelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-		accelerationStructureFeatures.pNext = nullptr;
+		accelerationStructureFeatures.pNext = &rayQueryFeatures;
 		accelerationStructureFeatures.accelerationStructure = VK_TRUE;
-		//accelerationStructureFeatures.accelerationStructureHostCommands = VK_TRUE;
+		// accelerationStructureFeatures.accelerationStructureHostCommands = VK_TRUE;
 
 		auto physicalDeviceFeatures13 = VkPhysicalDeviceVulkan13Features{};
 		physicalDeviceFeatures13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -372,7 +377,8 @@ void Framework::Graphics::VulkanContext::Initialize(std::string_view application
 																	 .pfnFree = vmaFreeCallback,
 																	 .pUserData = nullptr };
 
-		const auto allocatorCreateInfo = VmaAllocatorCreateInfo{ .flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT | VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+		const auto allocatorCreateInfo = VmaAllocatorCreateInfo{ .flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT |
+																	 VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
 																 .physicalDevice = physicalDevice,
 																 .device = device,
 #ifdef RTRG_ENABLE_PROFILER
@@ -614,6 +620,55 @@ void VulkanContext::DestroyBuffer(const GraphicsBuffer& buffer) const
 	vmaDestroyBuffer(allocator, buffer.buffer, buffer.allocation);
 }
 
+GraphicsTexture2D VulkanContext::CreateTexture2D(const Texture2DDesc&& desc) const
+{
+	auto texture = GraphicsTexture2D{ .width = desc.width, .height = desc.height, .format = desc.format };
+
+	auto mipLevels = U32{ 0 };
+	auto maxMipLevelCount = Math::Floor(log2(std::max(desc.width, desc.height))) + 1;
+
+	if (std::holds_alternative<MipLevels>(desc.mipOptions))
+	{
+		mipLevels = std::get<MipLevels>(desc.mipOptions) == MipLevels::none ? 1 : maxMipLevelCount;
+	}
+	else
+	{
+		mipLevels = std::get<MipLevelsCount>(desc.mipOptions);
+	}
+	assert(mipLevels <= maxMipLevelCount);
+
+
+	const auto imageInfo = VkImageCreateInfo{ .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+											  .pNext = nullptr,
+											  .flags = 0,
+											  .imageType = VK_IMAGE_TYPE_2D,
+											  .format = mapFormat(desc.format),
+											  .extent = VkExtent3D{ desc.width, desc.height, 1 },
+											  .mipLevels = mipLevels,
+											  .arrayLayers = 1,
+											  .samples = VK_SAMPLE_COUNT_1_BIT,
+											  .tiling = VK_IMAGE_TILING_OPTIMAL,
+											  .usage = desc.usage,
+											  .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+											  .queueFamilyIndexCount = 0,
+											  .pQueueFamilyIndices = nullptr,
+											  .initialLayout = VK_IMAGE_LAYOUT_GENERAL };
+
+	const auto allocationInfo = mapMemoryUsageToAllocationInfo(desc.memoryUsage);
+	const auto result =
+		vmaCreateImage(allocator, &imageInfo, &allocationInfo, &texture.image, &texture.allocation, nullptr);
+	assert(result == VK_SUCCESS);
+
+	SetObjectDebugName(VK_OBJECT_TYPE_IMAGE, (U64)texture.image, desc.debugName);
+
+	return texture;
+}
+
+void Framework::Graphics::VulkanContext::DestroyTexture2D(const GraphicsTexture2D& texture) const
+{
+	vmaDestroyImage(allocator, texture.image, texture.allocation);
+}
+
 VkShaderModule VulkanContext::ShaderModuleFromFile(Utils::ShaderStage stage, const std::filesystem::path& path,
 												   std::string_view entryPoint = "main") const
 {
@@ -696,6 +751,10 @@ BindGroupLayout Framework::Graphics::VulkanContext::CreateBindGroupLayout(const 
 		if (std::holds_alternative<UniformBufferBinding>(binding))
 		{
 			type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		}
+		if (std::holds_alternative<AccelerationStructureBinding>(binding))
+		{
+			type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 		}
 
 		bindings.push_back(VkDescriptorSetLayoutBinding{ .binding = static_cast<U32>(i),

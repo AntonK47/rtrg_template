@@ -84,3 +84,28 @@ PUBLIC
 
 
 set_target_properties(imgui-node-editor PROPERTIES FOLDER "thirdParty/imgui-node-editor")
+
+#xatlas
+FetchContent_Declare(xatlas
+    GIT_REPOSITORY https://github.com/jpcy/xatlas.git
+    GIT_TAG master
+)
+
+FetchContent_MakeAvailable(xatlas)
+add_library(xatlas)
+add_library(xatlas::xatlas ALIAS xatlas)
+target_sources(xatlas 
+PRIVATE
+    ${xatlas_SOURCE_DIR}/source/xatlas/xatlas.h
+    ${xatlas_SOURCE_DIR}/source/xatlas/xatlas_c.h
+    ${xatlas_SOURCE_DIR}/source/xatlas/xatlas.cpp
+    $<$<CXX_COMPILER_ID:MSVC>:${xatlas_SOURCE_DIR}/source/xatlas.natvis>>
+)
+        
+target_include_directories(xatlas
+PUBLIC
+    ${xatlas_SOURCE_DIR}/source/xatlas/
+)
+
+
+set_target_properties(xatlas PROPERTIES FOLDER "thirdParty/xatlas")

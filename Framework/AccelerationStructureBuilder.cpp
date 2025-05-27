@@ -79,7 +79,7 @@ void AccelerationStructureBuilder::AddMeshAsNewBottomLevelAccelerationStructure(
 												&asBuildInfo, &maxPrimitiveCount, &sizeInfo);
 	}
 
-	asBuildInfos.push_back(TriangleBottomLevelAccelerationStrcutureBuildInfo{ sizeInfo, &mesh });
+	asBuildInfos.push_back(TriangleBottomLevelAccelerationStructureBuildInfo{ sizeInfo, &mesh });
 	transforms.push_back(transform);
 }
 
@@ -92,10 +92,10 @@ void AccelerationStructureBuilder::BuildBottomLevelAccelerationStructures(const 
 			std::max({ requiredScratchSize, static_cast<U32>(blasBuildInfo.sizeInfo.buildScratchSize) });
 	}
 
-	// NITICE:  VUID-VkAccelerationStructureCreateInfoKHR-offset-03734 requirenment must be hold
+	// NITICE:  VUID-VkAccelerationStructureCreateInfoKHR-offset-03734 requirement must be hold
 	const auto requiredTotalBufferSize =
 		std::accumulate(asBuildInfos.begin(), asBuildInfos.end(), U32{ 0 },
-						[](U32 a, const TriangleBottomLevelAccelerationStrcutureBuildInfo& b)
+						[](U32 a, const TriangleBottomLevelAccelerationStructureBuildInfo& b)
 						{ return a + RoundUpToMultipleOf256(static_cast<U32>(b.sizeInfo.accelerationStructureSize)); });
 
 	if (static_cast<U32>(requiredScratchSize) > scratchBufferSize)

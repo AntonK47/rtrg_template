@@ -99,6 +99,20 @@ void UnifiedGeometryBuffer::CreateResources(Graphics::VulkanContext& context, Sc
 												.source = shaderCode,
 												.entryPoint = "unifiedGeometryBuffer_VirtualLookupTableUpdate" },
 							 .pipelineLayout = PipelineLayout{ .layout = lookupTableUpdatePipelineLayout.layout } });
+
+
+	const auto dsWrite = VkWriteDescriptorSet{ .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+											   .pNext = nullptr,
+											   .dstSet = geometryLookupTableDescriptorSet,
+											   .dstBinding = 0,
+											   .dstArrayElement = 0,
+											   .descriptorCount = 1,
+											   .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+											   .pImageInfo = nullptr,
+											   .pBufferInfo = &geometryLookupTableBufferInfo,
+											   .pTexelBufferView = nullptr };
+
+	vkUpdateDescriptorSets(context.device, 1, &dsWrite, 0, nullptr);
 }
 
 void UnifiedGeometryBuffer::ReleaseResources(const VulkanContext& context)

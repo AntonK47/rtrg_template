@@ -49,6 +49,22 @@ namespace Framework
 			void* mappedPtr{ nullptr };
 		};
 
+		enum class Format
+		{
+			none,
+			d32f,
+			rgba8unorm
+		};
+
+		struct GraphicsTexture2D
+		{
+			VmaAllocation allocation{};
+			VkImage image{};
+			U32 width;
+			U32 height;
+			Format format;
+		};
+
 		enum class MemoryUsage
 		{
 			gpu,
@@ -63,12 +79,25 @@ namespace Framework
 			const char* debugName = "";
 		};
 
-		enum class Format
+		enum class MipLevels
 		{
 			none,
-			d32f,
-			rgba8unorm
+			all
 		};
+
+		using MipLevelsCount = U32;
+
+		struct Texture2DDesc
+		{
+			Format format;
+			U32 width;
+			U32 height;
+			VkImageUsageFlags usage{ 0 };
+			MemoryUsage memoryUsage{ MemoryUsage::gpu };
+			std::variant<MipLevels, MipLevelsCount> mipOptions = MipLevels::none;
+			const char* debugName = "";
+		};
+
 
 		inline VkFormat mapFormat(Format format)
 		{
@@ -82,6 +111,20 @@ namespace Framework
 				return VK_FORMAT_D32_SFLOAT;
 			}
 			return VK_FORMAT_UNDEFINED;
+		}
+
+		inline U32 texelSizeInBytes(Format format)
+		{
+			switch (format)
+			{
+			case Format::none:
+				return 0;
+			case Format::rgba8unorm:
+				return 4;
+			case Format::d32f:
+				return 4;
+			}
+			return 0;
 		}
 
 
@@ -115,7 +158,11 @@ namespace Framework
 		struct UniformBufferBinding : BindingBase
 		{
 		};
-		using Binding = std::variant<StorageBufferBinding, UniformBufferBinding>;
+		struct AccelerationStructureBinding : BindingBase
+		{
+		};
+
+		using Binding = std::variant<StorageBufferBinding, UniformBufferBinding, AccelerationStructureBinding>;
 
 		struct BindGroupLayoutDesc
 		{
@@ -321,6 +368,9 @@ namespace Framework
 
 			[[nodiscard]] GraphicsBuffer CreateBuffer(const BufferDesc&& desc) const;
 			void DestroyBuffer(const GraphicsBuffer& buffer) const;
+
+			[[nodiscard]] GraphicsTexture2D CreateTexture2D(const Texture2DDesc&& desc) const;
+			void DestroyTexture2D(const GraphicsTexture2D& texture) const;
 
 			[[nodiscard]] VkShaderModule ShaderModuleFromFile(Utils::ShaderStage stage,
 															  const std::filesystem::path& path,

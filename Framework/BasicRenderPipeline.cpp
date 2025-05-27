@@ -109,7 +109,7 @@ void BasicRenderPipeline::Execute(const VulkanContext& context, const WindowView
 		}
 #pragma endregion
 
-		if (ImGui::Button("build blas"))
+		if (ImGui::Button("build tlas"))
 		{
 			for (auto i = 0; i < scene.meshes.size(); i++)
 			{

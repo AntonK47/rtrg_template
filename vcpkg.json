@@ -26,7 +26,8 @@
       "features": [
         "gui-tools"
       ]
-    }
+    },
+    "stb"
   ],
-  "builtin-baseline": "117512d870c0f260f4914b6b4bb006b9054b06eb"
+  "builtin-baseline": "dfc1b16d3afa617d261e636eb0bb89995f0692ce"
 }

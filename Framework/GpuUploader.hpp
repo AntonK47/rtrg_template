@@ -11,6 +11,7 @@ namespace Framework
 	struct OnDemandDataSource
 	{
 		virtual bool RequestNextChunk(BinaryData& destination, U32& size) = 0;
+		virtual ~OnDemandDataSource(){}
 	};
 
 	struct LargeBufferDataSource : OnDemandDataSource
@@ -28,6 +29,13 @@ namespace Framework
 		U32 offset;
 	};
 
+	struct TextureDestination
+	{
+		Graphics::GraphicsTexture2D destinationResource;
+		U32 mipLevel;
+
+	};
+
 	struct GpuUploader
 	{
 		void Initialize(const Graphics::VulkanContext& context);
@@ -35,6 +43,8 @@ namespace Framework
 
 		void Upload(const BinaryData& source, const UploadDestination& destination);
 		void Upload(OnDemandDataSource& source, const UploadDestination& destination);
+
+		void UploadTextureData(OnDemandDataSource& source, const TextureDestination& destination);
 
 	private:
 

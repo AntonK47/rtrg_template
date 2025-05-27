@@ -1,0 +1,41 @@
+#version 460
+
+#extension GL_EXT_ray_tracing : require
+#extension GL_GOOGLE_include_directive : require
+#include "RaytracedAmbientOcclusion.Shared.h"
+
+
+layout(location = 0) rayPayloadEXT RayPayload pay;
+
+layout(set = 0, binding = 0, r8) uniform image2D ambientOcclusionOutput;
+layout(set = 0, binding = 1) uniform accelerationStructureEXT scene;
+
+layout(push_constant) uniform ViewDataBlock
+{
+	mat4 viewProjection;
+} view;
+
+struct Ray 
+{
+	vec3 origin;
+	vec3 direction;
+};
+
+float shadow_ray(Ray ray)
+{
+	pay.hitSky = 0.0f;
+
+	traceRayEXT(scene, 
+				gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT 
+				| gl_RayFlagsTerminateOnFirstHitEXT,
+				0xff,
+				0, 0, 0, 
+				ray.origin, 0.0f, ray.direction, 1000.0f, 0);
+
+	return pay.hitSky;
+}
+
+void main()
+{
+	
+}

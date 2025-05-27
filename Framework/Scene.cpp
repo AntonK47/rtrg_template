@@ -13,15 +13,19 @@ void Scene::CreateResources(const VulkanContext& context)
 		BindGroupLayoutDesc{ .bindings = { StorageBufferBinding{}, StorageBufferBinding{}, StorageBufferBinding{} },
 							 .debugName = "Uniform Geometry Buffer Descriptor Set Layout" });
 
+	accelerationStructureBindGroupLayout = context.CreateBindGroupLayout(BindGroupLayoutDesc{
+		.bindings = { AccelerationStructureBinding{} }, .debugName = "TLAS Descriptor Set Layout" });
 	{
 		const auto poolSizes =
-			std::array{ VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 3 } };
+			std::array{ VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 3 },
+						VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+											  .descriptorCount = 1 } };
 
 		const auto descriptorPoolCreateInfo =
 			VkDescriptorPoolCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 										.pNext = nullptr,
 										.flags = 0,
-										.maxSets = 1,
+										.maxSets = 2,
 										.poolSizeCount = static_cast<U32>(poolSizes.size()),
 										.pPoolSizes = poolSizes.data() };
 		const auto result =
@@ -40,6 +44,19 @@ void Scene::CreateResources(const VulkanContext& context)
 		context.SetObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET, (uint64_t)geometryDescriptorSet, "geometryDS");
 	}
 	{
+		const auto allocationInfo =
+			VkDescriptorSetAllocateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+										 .pNext = nullptr,
+										 .descriptorPool = geometryDescriptorPool,
+										 .descriptorSetCount = 1,
+										 .pSetLayouts = &accelerationStructureBindGroupLayout.layout };
+		const auto result =
+			vkAllocateDescriptorSets(context.device, &allocationInfo, &accelerationStructureDescriptorSet);
+		assert(result == VK_SUCCESS);
+		context.SetObjectDebugName(VK_OBJECT_TYPE_DESCRIPTOR_SET, (uint64_t)accelerationStructureDescriptorSet,
+								   "TLAS_DS");
+	}
+	{
 		const auto poolCreateInfo = VkCommandPoolCreateInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 															 .pNext = nullptr,
 															 .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
@@ -56,6 +73,7 @@ void Scene::CreateResources(const VulkanContext& context)
 			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 			.commandBufferCount = 1,
 		};
+
 
 		const auto result = vkAllocateCommandBuffers(context.device, &allocateCreateInfo, &commandBuffer);
 		assert(result == VK_SUCCESS);

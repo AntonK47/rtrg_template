@@ -1,4 +1,5 @@
 #include "GpuUploader.hpp"
+#include "Math.hpp"
 
 #include <queue>
 
@@ -44,11 +45,16 @@ void Framework::GpuUploader::Initialize(const Graphics::VulkanContext& context)
 	}
 }
 
-void Framework::GpuUploader::Upload(const BinaryData& source, const UploadDestination& destination)
+void GpuUploader::Deinitialize(const Graphics::VulkanContext& context)
+{
+	context.DestroyBuffer(stagingBuffer);
+}
+
+void GpuUploader::Upload(const BinaryData& source, const UploadDestination& destination)
 {
 }
 
-void Framework::GpuUploader::Upload(OnDemandDataSource& source, const UploadDestination& destination)
+void GpuUploader::Upload(OnDemandDataSource& source, const UploadDestination& destination)
 {
 	auto stagingBufferData = BinaryData{ (std::byte*)stagingBuffer.mappedPtr, (size_t)stagingBufferSize };
 	auto size = U32{};
@@ -120,14 +126,91 @@ void Framework::GpuUploader::Upload(OnDemandDataSource& source, const UploadDest
 	}
 }
 
-bool Framework::LargeBufferDataSource::RequestNextChunk(BinaryData& destination, U32& size)
+void GpuUploader::UploadTextureData(OnDemandDataSource& source, const TextureDestination& destination)
+{
+	auto stagingBufferData = BinaryData{ (std::byte*)stagingBuffer.mappedPtr, (size_t)stagingBufferSize };
+	auto size = U32{};
+
+	const auto texelSize = texelSizeInBytes(destination.destinationResource.format);
+	const auto rowSizeInBytes = destination.destinationResource.width * texelSize;
+	const auto staggedTexels = (U32)stagingBufferSize / texelSize;
+
+	auto texelOffset = U32{};
+
+	while (source.RequestNextChunk(stagingBufferData, size))
+	{
+		{
+			const auto beginInfo = VkCommandBufferBeginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+															 .pNext = nullptr,
+															 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+															 .pInheritanceInfo = nullptr };
+			const auto result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
+			assert(result == VK_SUCCESS);
+		}
+
+		const auto rest = texelOffset % destination.destinationResource.width;
+		const auto row = texelOffset / destination.destinationResource.width;
+
+		if (rest != 0)
+		{
+			const auto texels = Math::Min(staggedTexels, destination.destinationResource.width - rest);
+
+			const auto region =
+				VkBufferImageCopy2{ .sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+									.pNext = nullptr,
+									.bufferOffset = 0,
+									.bufferRowLength = 0,
+									.bufferImageHeight = 0,
+									.imageSubresource = VkImageSubresourceLayers{ .aspectMask = VK_IMAGE_ASPECT_NONE,
+																				  .mipLevel = destination.mipLevel,
+																				  .baseArrayLayer = 0,
+																				  .layerCount = 1 },
+									.imageOffset = VkOffset3D{ (I32)rest, (I32)row, 1 },
+									.imageExtent = VkExtent3D{ texels, 1, 1 }
+				};
+
+			texelOffset += texels;
+		}
+
+
+
+
+		if (size < rowSizeInBytes)
+
+			const auto region = VkBufferImageCopy2{
+				.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+				.pNext = nullptr,
+				.bufferOffset = 0,
+				.bufferRowLength = 0,
+				.bufferImageHeight = 0,
+				.imageSubresource = VkImageSubresourceLayers{ .aspectMask = VK_IMAGE_ASPECT_NONE,
+															  .mipLevel = destination.mipLevel,
+															  .baseArrayLayer = 0,
+															  .layerCount = 1 },
+				//.imageOffset =
+
+			};
+
+		const auto copyBufferToImageInfo =
+			VkCopyBufferToImageInfo2{ .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2,
+									  .pNext = nullptr,
+									  .srcBuffer = stagingBuffer.buffer,
+									  .dstImage = destination.destinationResource.image,
+									  .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+									  .regionCount = 1 };
+
+		vkCmdCopyBufferToImage2(commandBuffer, &copyBufferToImageInfo);
+	}
+}
+
+bool LargeBufferDataSource::RequestNextChunk(BinaryData& destination, U32& size)
 {
 	const auto dstSize = destination.size();
 	const auto sourceSize = source_.size();
 
 	const auto offset = currentChunk_ * dstSize;
 
-	size = std::min({sourceSize - offset, dstSize});
+	size = std::min({ sourceSize - offset, dstSize });
 	currentChunk_++;
 
 	std::memcpy(source_.data(), destination.data(), size);

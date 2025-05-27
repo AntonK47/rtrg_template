@@ -10,6 +10,11 @@
 
 #include <imgui_node_editor.h>
 
+namespace 
+	{
+
+}
+
 namespace Framework
 {
 	namespace Editor
@@ -28,12 +33,12 @@ namespace Framework
 
 		struct AssetImporterEditor
 		{
-			ax::NodeEditor::EditorContext* editorContext{nullptr};
+			ax::NodeEditor::EditorContext* editorContext{ nullptr };
 
 			AssetImporterEditor()
 			{
 				ax::NodeEditor::Config config;
-				//config.SettingsFile = "Simple.json";
+				// config.SettingsFile = "Simple.json";
 				editorContext = ax::NodeEditor::CreateEditor(&config);
 			}
 
@@ -136,9 +141,31 @@ namespace Framework
 
 				static auto params = std::vector<ParamDesc>{};
 
-				ImGui::Begin("Node Test");
+				struct MaterialDocument
+				{
+					bool isDirty{ true };
+				};
 
-				/*if (ImGui::BeginChild("Parameters", { 200, 100 }, ImGuiChildFlags_None))
+				static auto materialDocument = MaterialDocument{};
+
+				auto documentWindowFlags = ImGuiWindowFlags{ ImGuiWindowFlags_None };
+				if (materialDocument.isDirty)
+				{
+					documentWindowFlags |= ImGuiWindowFlags_UnsavedDocument;
+				}
+
+				ImGui::Begin("MaterialEditorDocument", 0, documentWindowFlags);
+
+				ImGui::BeginChild("MaterialEditorToolBar", { -1, 100 });
+				ImGui::Text("MaterialEditorToolBar");
+				
+				ImGui::EndChild();
+
+				ImGui::BeginChild("MaterialPropertiesPanel", {200, -1}, ImGuiChildFlags_ResizeX);
+				ImGui::Text("MaterialPropertiesPanel");
+				ImGui::EndChild();
+
+					/*if (ImGui::BeginChild("Parameters", { 200, 100 }, ImGuiChildFlags_None))
 				{
 					if (ImGui::BeginListBox("##List01"))
 					{
@@ -157,25 +184,42 @@ namespace Framework
 
 					ImGui::EndChild();
 				}*/
-				// ImGui::Separator();
+
 				ax::NodeEditor::SetCurrentEditor(editorContext);
 
-				ax::NodeEditor::Begin("editor");
-				//int uniqueId = 1;
+				ImGui::SameLine();
+				ax::NodeEditor::Begin("editor", {-1, -1});
+				// int uniqueId = 1;
 				//// Start drawing nodes.
-				//ax::NodeEditor::BeginNode(uniqueId++);
-				//ImGui::Text("Node A");
-				//ax::NodeEditor::BeginPin(uniqueId++, ax::NodeEditor::PinKind::Input);
-				//ImGui::Text("-> In");
-				//ax::NodeEditor::EndPin();
-				//ImGui::SameLine();
-				//ax::NodeEditor::BeginPin(uniqueId++, ax::NodeEditor::PinKind::Output);
-				//ImGui::Text("Out ->");
-				//ax::NodeEditor::EndPin();
-				//ax::NodeEditor::EndNode();
+				// ax::NodeEditor::BeginNode(uniqueId++);
+				// ImGui::Text("Node A");
+				// ax::NodeEditor::BeginPin(uniqueId++, ax::NodeEditor::PinKind::Input);
+				// ImGui::Text("-> In");
+				// ax::NodeEditor::EndPin();
+				// ImGui::SameLine();
+				// ax::NodeEditor::BeginPin(uniqueId++, ax::NodeEditor::PinKind::Output);
+				// ImGui::Text("Out ->");
+				// ax::NodeEditor::EndPin();
+				// ax::NodeEditor::EndNode();
+
+				
+				ax::NodeEditor::Suspend();
+				if(ax::NodeEditor::ShowBackgroundContextMenu())
+				{
+				 ImGui::OpenPopup("ContextCanvas");
+				}
+
+				if(ImGui::BeginPopup("ContextCanvas"))
+				{
+					ImGui::Text("ContextCanvas");
+					ImGui::EndPopup();
+				}
+				ax::NodeEditor::Resume();
 
 				ax::NodeEditor::End();
-				// ax::NodeEditor::SetCurrentEditor(nullptr);
+
+
+				ax::NodeEditor::SetCurrentEditor(nullptr);
 
 				ImGui::End();
 			}

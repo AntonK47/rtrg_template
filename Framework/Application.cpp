@@ -7,8 +7,14 @@
 #include "SDL3Utils.hpp"
 #include "VulkanRHI.hpp"
 
+#include "LightmapAtlasBuilder.hpp"
 #include "Memory.hpp"
 #include "StreamingSystem.hpp"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
+#include "GpuUploader.hpp"
 
 using namespace Framework;
 using namespace Framework::Animation;
@@ -18,6 +24,7 @@ using ViewportSize = glm::vec2;
 
 namespace
 {
+
 	std::tuple<glm::vec2, bool> GetScreenSpacePosition(const ViewportSize& viewport, const glm::mat4& modelView,
 													   const glm::mat4& projection, const glm::vec3& positionWS)
 	{
@@ -95,7 +102,6 @@ namespace
 
 	void GenerateExampleTestSceneData()
 	{
-		
 	}
 } // namespace
 void Framework::Application::Run()
@@ -135,6 +141,9 @@ void Framework::Application::Run()
 
 	auto vulkanContext = VulkanContext{};
 	vulkanContext.Initialize(applicationName, window, windowViewport);
+
+	auto uploader = GpuUploader{};
+	uploader.Initialize(vulkanContext);
 
 	auto basicRenderPipeline = BasicRenderPipeline{};
 	basicRenderPipeline.Initialize(vulkanContext, windowViewport, streamingSystem);
@@ -237,7 +246,7 @@ void Framework::Application::Run()
 
 
 			auto& drawList = *ImGui::GetBackgroundDrawList();
-			
+
 			if (x1)
 			{
 
@@ -264,23 +273,144 @@ void Framework::Application::Run()
 			{
 				basicRenderPipeline.GetScene().Upload("Assets/Meshes/after_the_rain..._-_vr__sound/scene.gltf",
 													  vulkanContext);
+
+				streamingSystem.Request(
+					{ []()
+					  {
+						  auto importer = AssetImporter(
+							  std::filesystem::path{ "Assets/Meshes/after_the_rain..._-_vr__sound/scene.gltf" });
+
+						  auto builder = LightmapAtlasBuilder{};
+
+						  const auto importSettings = Framework::MeshImportSettings{
+							  .verticesStreamDeclarations = { Framework::VerticesStreamDeclaration{ .hasPosition =
+																										true } }
+						  };
+
+						  const auto& info = importer.GetSceneInformation();
+
+						  auto geometryByteOffset = 0u;
+
+
+						  for (auto i = 0; i < 2; /*info.meshCount*/ i++)
+						  {
+							  const auto meshData = importer.ImportMesh(i, importSettings);
+							  const auto transform = importer.getModelMatrix(i);
+							  const auto x =
+								  Math::Length(Math::Vector3{ transform[0][0], transform[0][1], transform[0][2] });
+							  const auto y =
+								  Math::Length(Math::Vector3{ transform[1][0], transform[1][1], transform[1][2] });
+							  const auto z =
+								  Math::Length(Math::Vector3{ transform[0][0], transform[2][1], transform[2][2] });
+
+							  const auto positionScale = Math::Vector3{ x, y, z };
+
+							  builder.AddMesh(meshData, positionScale);
+						  }
+
+						  builder.Build();
+					  } });
 			}
 
 			if (ImGui::Button("add task"))
 			{
 				/*basicRenderPipeline.unifiedGeometryBuffer.RequestSubMesh({});*/
-				for(auto i = 0; i< 10; i++)
+				for (auto i = 0; i < 10; i++)
 				{
 					streamingSystem.Request({ []()
-										  {
-											  volatile auto b = 0;
-											  for (auto i = 0; i < 130000000; i++)
 											  {
-												  b += i;
-												  volatile auto c = b;
-											  }
-										  } });
+												  volatile auto b = 0;
+												  for (auto i = 0; i < 130000000; i++)
+												  {
+													  b += i;
+													  volatile auto c = b;
+												  }
+											  } });
+				}
+			}
+
+			if (ImGui::Button("create texture"))
+			{
+
+
+				struct StbImageDataSource : OnDemandDataSource
+				{
+					StbImageDataSource(std::string_view imagePath, U8 channels)
+					{
+						assert(channels > 0 and channels <= 4);
+
+						I32 x, y, n;
+						imageData_ = stbi_load(std::string{ imagePath }.c_str(), &x, &y, &n, channels);
+
+						if (!imageData_)
+						{
+							throw std::runtime_error{ "Can't load image!" };
+						}
+
+						channels_ = n;
+						width_ = x;
+						height_ = y;
 					}
+
+					~StbImageDataSource() override
+					{
+						stbi_image_free(imageData_);
+					}
+
+					bool RequestNextChunk(BinaryData& destination, U32& size) override
+					{
+						const auto totalSizeInBytes = width_ * height_ * channels_;
+						if (offset == totalSizeInBytes)
+						{
+							return false;
+						}
+						const auto rest = totalSizeInBytes - offset;
+
+						size = Math::Min(rest, (U32)destination.size());
+
+						std::memcpy(destination.data(), ((const std::byte*)imageData_ + offset), size);
+						offset += size;
+
+						return true;
+					}
+
+					U32 Width() const
+					{
+						return width_;
+					}
+					U32 Height() const
+					{
+						return height_;
+					}
+
+				private:
+					void* imageData_{ nullptr };
+					U32 channels_{ 0 };
+					U32 width_{ 0 };
+					U32 height_{ 0 };
+					U32 offset{ 0 };
+				};
+
+				auto imageDataProvider =
+					StbImageDataSource{ "Assets/Meshes/after_the_rain..._-_vr__sound/textures/arbre-tronc_diffuse.jpeg",
+										4 };
+
+				const auto texture =
+					vulkanContext.CreateTexture2D(Texture2DDesc{ .format = Format::rgba8unorm,
+																 .width = imageDataProvider.Width(),
+																 .height = imageDataProvider.Height(),
+																 .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT });
+
+
+				uploader.UploadTextureData(imageDataProvider,
+										   TextureDestination{ .destinationResource = texture, .mipLevel = 0 });
+
+				//    // ... process data if not NULL ...
+				//    // ... x = width, y = height, n = # 8-bit components per pixel ...
+				//    // ... replace '0' with '1'..'4' to force that many components per pixel
+				//    // ... but 'n' will always be the number that it would have been if you said 0
+				//
+				//
 			}
 
 			/*
@@ -444,6 +574,7 @@ void Framework::Application::Run()
 	streamingSystem.Deinitialize();
 	guiSystem.Deinitialize();
 	basicRenderPipeline.Deinitialize(vulkanContext);
+	uploader.Deinitialize(vulkanContext);
 	vulkanContext.Deinitialize();
 	SDL_DestroyWindow(window);
 	SDL_Quit();
@@ -457,6 +588,6 @@ void Framework::Application::Run()
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 #endif // RTRG_ENABLE_PROFILER
-	//TODO: it's a hack, otherwise tracy blocks exiting after returning from this call
+	   // TODO: it's a hack, otherwise tracy blocks exiting after returning from this call
 	std::quick_exit(0);
 }

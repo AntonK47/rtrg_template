@@ -24,6 +24,7 @@ namespace Framework
 		void ReleaseResources(const Graphics::VulkanContext& context);
 
 		void Upload(const std::string_view mesh, const Graphics::VulkanContext& context);
+		void SetTlas(const Graphics::VulkanContext& context);
 
 		void AddModel(const IndexedStaticMesh& mesh, const Math::Matrix4x4& transform);
 
@@ -39,6 +40,9 @@ namespace Framework
 		VkDescriptorPool geometryDescriptorPool;
 		VkDescriptorSet geometryDescriptorSet;
 		Graphics::BindGroupLayout geometryBindGroupLayout;
+
+		VkDescriptorSet accelerationStructureDescriptorSet;
+		Graphics::BindGroupLayout  accelerationStructureBindGroupLayout;
 
 		Graphics::GraphicsBuffer geometryBuffer{};
 		U32 geometryBufferFreeOffset{ 0 };
